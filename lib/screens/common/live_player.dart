@@ -8,8 +8,10 @@ import 'package:provider/provider.dart';
 
 import '../../functions/function.dart';
 import '../../models/live_tv.dart';
+import '../../models/wellness.dart';
 import '../../provider/app_dependency_provider.dart';
 import '../../provider/settings_provider.dart';
+import '../../provider/wellness_provider.dart';
 import '../../services/analytics_service.dart';
 import '../../services/daddylive_service.dart';
 import '../../services/stream_intro_service.dart';
@@ -86,6 +88,7 @@ class _LivePlayerState extends State<LivePlayer> {
   Timer? _recoveryAttemptTimer;
   late final DateTime _sessionStartedAt;
   late final String _sessionId;
+  late final WellnessPlaybackTracker _wellnessTracker;
   DateTime? _playingStartedAt;
   DateTime? _bufferingStartedAt;
   int _watchedMs = 0;
@@ -126,6 +129,10 @@ class _LivePlayerState extends State<LivePlayer> {
     _sessionStartedAt = DateTime.now();
     _sessionId =
         '${_sessionStartedAt.microsecondsSinceEpoch}-${identityHashCode(this)}';
+    _wellnessTracker = WellnessPlaybackTracker(
+      id: _sessionId,
+      createdAt: _sessionStartedAt,
+    );
     _currentChannelId =
         widget.initialChannelId ?? widget.channels.firstOrNull?.id;
     _currentChannelName = widget.channelName;
@@ -616,16 +623,19 @@ class _LivePlayerState extends State<LivePlayer> {
         break;
       case BetterPlayerEventType.play:
         _startWatchClock();
+        _wellnessTracker.play();
         _trackPlayerEvent('play');
         break;
       case BetterPlayerEventType.pause:
         _wasPlayingBeforeBuffering = false;
         _stopWatchClock();
+        _wellnessTracker.pause();
         _trackPlayerEvent('pause');
         break;
       case BetterPlayerEventType.bufferingStart:
         _wasPlayingBeforeBuffering = _playingStartedAt != null;
         _stopWatchClock();
+        _wellnessTracker.pause();
         _bufferingStartedAt ??= DateTime.now();
         _bufferCount++;
         _trackPlayerEvent('buffering_started');
@@ -638,6 +648,7 @@ class _LivePlayerState extends State<LivePlayer> {
         _bufferingMs += durationMs;
         _bufferingStartedAt = null;
         if (_wasPlayingBeforeBuffering) _startWatchClock();
+        if (_wasPlayingBeforeBuffering) _wellnessTracker.play();
         _wasPlayingBeforeBuffering = false;
         _trackPlayerEvent('buffering_ended', bufferingMs: durationMs);
         break;
@@ -715,6 +726,22 @@ class _LivePlayerState extends State<LivePlayer> {
       bufferingMs: bufferingMs,
       bufferCount: _bufferCount,
       error: error,
+    );
+  }
+
+  Future<void> _persistWellnessSession() async {
+    await WellnessProvider.instance.recordPlayback(
+      sessionId: _sessionId,
+      tracker: _wellnessTracker,
+      mediaType: WellnessMediaType.live,
+      source: WellnessPlaybackSource.live,
+      contentId: _currentChannelId ?? 'unknown',
+      title: _currentChannelName,
+      durationMs: _sessionElapsedMs,
+      progressEndMs: _sessionElapsedMs,
+      completed: false,
+      provider: 'Live TV',
+      syncImmediately: true,
     );
   }
 
@@ -856,6 +883,7 @@ class _LivePlayerState extends State<LivePlayer> {
     _betterPlayerController.removeEventsListener(_onPlayerEvent);
     _playbackFailure.dispose();
     _stopWatchClock();
+    _wellnessTracker.pause();
     final bufferingStartedAt = _bufferingStartedAt;
     if (bufferingStartedAt != null) {
       _bufferingMs +=
@@ -872,6 +900,7 @@ class _LivePlayerState extends State<LivePlayer> {
       bufferCount: _bufferCount,
       channelSwitchCount: _channelSwitchCount,
     );
+    unawaited(_persistWellnessSession());
     _betterPlayerController.dispose();
     _introService.close();
     SystemChrome.setPreferredOrientations([

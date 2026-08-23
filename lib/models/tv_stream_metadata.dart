@@ -9,6 +9,9 @@ class TVStreamMetadata {
   int? elapsed;
   int? tvId;
   String? airDate;
+  List<String> genres;
+  List<String> languages;
+  List<String> countries;
   List<EpisodeMetadata>?
       seasonEpisodes; // List of all episodes in the current season
   List<SeasonMetadata>? allSeasons; // List of all available seasons
@@ -25,6 +28,9 @@ class TVStreamMetadata {
     required this.seriesName,
     required this.tvId,
     required this.airDate,
+    this.genres = const <String>[],
+    this.languages = const <String>[],
+    this.countries = const <String>[],
     this.backdropPath,
     this.seasonEpisodes,
     this.allSeasons,

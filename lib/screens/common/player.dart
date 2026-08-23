@@ -3,6 +3,8 @@
 import 'dart:async';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flixquest/models/tv_stream_metadata.dart';
+import 'package:flixquest/models/wellness.dart';
+import 'package:flixquest/provider/wellness_provider.dart';
 import 'package:flixquest/models/offline_download.dart';
 
 import '../../models/movie_stream_metadata.dart';
@@ -173,6 +175,8 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
   final Map<String, String> _providerErrors = {};
   late final DateTime _analyticsSessionStartedAt;
   late final String _analyticsSessionId;
+  late final WellnessPlaybackTracker _wellnessTracker;
+  DateTime? _lastWellnessCheckpointAt;
   DateTime? _analyticsPlayingStartedAt;
   DateTime? _analyticsBufferingStartedAt;
   int _analyticsWatchedMs = 0;
@@ -228,6 +232,10 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     _analyticsSessionStartedAt = DateTime.now();
     _analyticsSessionId =
         '${_analyticsSessionStartedAt.microsecondsSinceEpoch}-${identityHashCode(this)}';
+    _wellnessTracker = WellnessPlaybackTracker(
+      id: _analyticsSessionId,
+      createdAt: _analyticsSessionStartedAt,
+    );
 
     // Initialize episode selection with current season
     _episodeSelection = PlayerEpisodeSelection(widget.tvMetadata?.seasonNumber);
@@ -614,21 +622,28 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
                 .videoPlayerController?.value.duration?.inSeconds ??
             duration;
         _trackPlaybackEvent('pre_roll_ended');
+        if (_betterPlayerController.videoPlayerController?.value.isPlaying ==
+            true) {
+          _wellnessTracker.play();
+        }
         unawaited(_loadIntroDbTimings());
         break;
       case BetterPlayerEventType.play:
         _analyticsPlayingStartedAt ??= DateTime.now();
+        if (!_preRollActive) _wellnessTracker.play();
         _trackPlaybackEvent('play');
         break;
       case BetterPlayerEventType.pause:
         _analyticsWasPlayingBeforeBuffering = false;
         _stopAnalyticsWatchClock();
+        _wellnessTracker.pause();
         _trackPlaybackEvent('pause');
         break;
       case BetterPlayerEventType.bufferingStart:
         _analyticsWasPlayingBeforeBuffering =
             _analyticsPlayingStartedAt != null;
         _stopAnalyticsWatchClock();
+        _wellnessTracker.pause();
         _analyticsBufferingStartedAt ??= DateTime.now();
         _analyticsBufferCount++;
         _trackPlaybackEvent('buffering_started');
@@ -642,6 +657,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
         _analyticsBufferingStartedAt = null;
         if (_analyticsWasPlayingBeforeBuffering) {
           _analyticsPlayingStartedAt = DateTime.now();
+          _wellnessTracker.play();
         }
         _analyticsWasPlayingBeforeBuffering = false;
         _trackPlaybackEvent('buffering_ended', bufferingMs: bufferingMs);
@@ -767,6 +783,17 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
         final duration =
             _betterPlayerController.videoPlayerController!.value.duration;
         final isFullScreen = _betterPlayerController.isFullScreen;
+        final value = _betterPlayerController.videoPlayerController!.value;
+
+        final now = DateTime.now();
+        if (!_preRollActive &&
+            value.isPlaying &&
+            !value.isBuffering &&
+            (_lastWellnessCheckpointAt == null ||
+                now.difference(_lastWellnessCheckpointAt!).inSeconds >= 30)) {
+          _lastWellnessCheckpointAt = now;
+          unawaited(_persistWellnessSession());
+        }
 
         if (duration != null && duration.inMilliseconds > 0) {
           if (_preRollActive) return;
@@ -784,7 +811,6 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
 
           _updateIntroDbSegment(position, duration);
 
-          final value = _betterPlayerController.videoPlayerController!.value;
           final completed = _completionDetector.observe(
             position: position,
             duration: duration,
@@ -1540,8 +1566,64 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _persistWellnessSession({
+    bool completed = false,
+    bool syncImmediately = false,
+  }) async {
+    if (_preRollActive) return;
+    final value = _betterPlayerController.videoPlayerController?.value;
+    final positionMs = value?.position.inMilliseconds ?? 0;
+    final durationMs = value?.duration?.inMilliseconds ?? duration * 1000;
+    final isMovie = widget.mediaType == MediaType.movie;
+    final movie = widget.movieMetadata;
+    final episode = widget.tvMetadata;
+    final rawId = isMovie ? movie?.movieId : episode?.episodeId;
+    final fallbackEpisodeId = episode == null
+        ? null
+        : '${episode.tvId ?? 'unknown'}:${episode.seasonNumber ?? 0}:'
+            '${episode.episodeNumber ?? 0}';
+    final contentId = rawId?.toString() ?? fallbackEpisodeId;
+    final title = isMovie ? movie?.movieName : episode?.seriesName;
+    if (contentId == null || title == null || title.trim().isEmpty) return;
+    final releaseDate = isMovie ? movie?.releaseDate : episode?.airDate;
+    await WellnessProvider.instance.recordPlayback(
+      sessionId: _analyticsSessionId,
+      tracker: _wellnessTracker,
+      mediaType: isMovie ? WellnessMediaType.movie : WellnessMediaType.episode,
+      source: WellnessPlaybackSource.streaming,
+      contentId: contentId,
+      seriesId: isMovie ? null : episode?.tvId?.toString(),
+      title: title,
+      subtitle: isMovie ? null : episode?.episodeName,
+      seasonNumber: episode?.seasonNumber,
+      episodeNumber: episode?.episodeNumber,
+      durationMs: durationMs,
+      progressEndMs: positionMs,
+      completed: completed,
+      posterPath: isMovie ? movie?.posterPath : episode?.posterPath,
+      backdropPath: isMovie ? movie?.backdropPath : episode?.backdropPath,
+      releaseYear: isMovie
+          ? movie?.releaseYear
+          : DateTime.tryParse(releaseDate ?? '')?.year,
+      provider: _analyticsProviderName,
+      genres: isMovie ? movie?.genres ?? const [] : episode?.genres ?? const [],
+      languages: isMovie
+          ? movie?.languages ?? const []
+          : episode?.languages ?? const [],
+      countries: isMovie
+          ? movie?.countries ?? const []
+          : episode?.countries ?? const [],
+      syncImmediately: syncImmediately,
+    );
+  }
+
   /// Handles saving progress and analytics before switching to a new episode/movie
   Future<void> _handleContentSwitch() async {
+    await _persistWellnessSession(
+      completed: _playbackCompletionHandled,
+      syncImmediately: true,
+    );
+    if (!mounted) return;
     await _dataManagement.handleContentSwitch(
       context: context,
       mediaType: widget.mediaType!,
@@ -1561,6 +1643,10 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     final isInBackground = (state == AppLifecycleState.paused) ||
         (state == AppLifecycleState.inactive);
     if (isInBackground) {
+      unawaited(_persistWellnessSession(
+        completed: _playbackCompletionHandled,
+        syncImmediately: true,
+      ));
       if (_betterPlayerController.isVideoInitialized()!) {
         widget.mediaType == MediaType.movie
             ? insertRecentMovieData()
@@ -1592,6 +1678,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
 
     _betterPlayerController.removeEventsListener(_onAnalyticsPlayerEvent);
     _stopAnalyticsWatchClock();
+    _wellnessTracker.pause();
     final bufferingStartedAt = _analyticsBufferingStartedAt;
     if (bufferingStartedAt != null) {
       _analyticsBufferingMs +=
@@ -1610,6 +1697,10 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       providerSwitchCount: _analyticsProviderSwitchCount,
       provider: _analyticsProviderName,
     );
+    unawaited(_persistWellnessSession(
+      completed: _playbackCompletionHandled,
+      syncImmediately: true,
+    ));
 
     // Dispose the BetterPlayer controller to clean up resources
     _betterPlayerController.dispose();
@@ -1756,7 +1847,12 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     debugPrint('[Player] Playback completed via $source');
     _playbackCompletionHandled = true;
     _stopAnalyticsWatchClock();
+    _wellnessTracker.pause();
     _trackPlaybackEvent('finished', value: source);
+    unawaited(_persistWellnessSession(
+      completed: true,
+      syncImmediately: true,
+    ));
 
     // Remove the near-end teaser before presenting the definitive completion
     // action. Native and fallback completion can arrive close together.
@@ -2112,6 +2208,9 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       seriesName: current.seriesName,
       tvId: current.tvId,
       airDate: episode.airDate,
+      genres: current.genres,
+      languages: current.languages,
+      countries: current.countries,
       seasonEpisodes: current.seasonEpisodes,
       allSeasons: current.allSeasons,
     );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:better_player_plus/better_player_plus.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -9,8 +11,10 @@ import '../../functions/player_subtitle_configuration.dart';
 import '../../models/offline_download.dart';
 import '../../models/movie_stream_metadata.dart';
 import '../../models/tv_stream_metadata.dart';
+import '../../models/wellness.dart';
 import '../../constants/app_constants.dart';
 import '../../provider/settings_provider.dart';
+import '../../provider/wellness_provider.dart';
 import 'player/player_external_subtitles.dart';
 
 /// The lightweight offline variant of FlixQuest's Better Player. It keeps the
@@ -32,7 +36,22 @@ class _OfflinePlayerScreenState extends State<OfflinePlayerScreen> {
   late final BetterPlayerController _controller;
   final GlobalKey _playerKey = GlobalKey();
   var _initialized = false;
+  late final WellnessPlaybackTracker _wellnessTracker;
+  late final String _wellnessSessionId;
+  bool _completed = false;
   final PlayerExternalSubtitles _externalSubtitles = PlayerExternalSubtitles();
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _wellnessSessionId =
+        '${now.microsecondsSinceEpoch}-offline-${widget.download.id}';
+    _wellnessTracker = WellnessPlaybackTracker(
+      id: _wellnessSessionId,
+      createdAt: now,
+    );
+  }
 
   @override
   void didChangeDependencies() {
@@ -134,6 +153,7 @@ class _OfflinePlayerScreenState extends State<OfflinePlayerScreen> {
       ),
     );
     _controller.setBetterPlayerGlobalKey(_playerKey);
+    _controller.addEventsListener(_onPlayerEvent);
     final savedSubtitle = widget.download.offlineSubtitlePath;
     final quality = widget.download.quality.trim().isEmpty
         ? 'Auto'
@@ -161,6 +181,54 @@ class _OfflinePlayerScreenState extends State<OfflinePlayerScreen> {
               ]
             : const [],
       ),
+    );
+  }
+
+  void _onPlayerEvent(BetterPlayerEvent event) {
+    switch (event.betterPlayerEventType) {
+      case BetterPlayerEventType.play:
+        _wellnessTracker.play();
+      case BetterPlayerEventType.pause:
+      case BetterPlayerEventType.bufferingStart:
+        _wellnessTracker.pause();
+      case BetterPlayerEventType.bufferingEnd:
+        if (_controller.videoPlayerController?.value.isPlaying == true) {
+          _wellnessTracker.play();
+        }
+      case BetterPlayerEventType.finished:
+        _completed = true;
+        _wellnessTracker.pause();
+        unawaited(_persistWellnessSession(syncImmediately: true));
+      default:
+        break;
+    }
+  }
+
+  Future<void> _persistWellnessSession({bool syncImmediately = false}) async {
+    final value = _controller.videoPlayerController?.value;
+    final isMovie = widget.download.mediaType == 'movie';
+    final contentId = isMovie
+        ? (widget.download.contentId?.toString() ?? widget.download.id)
+        : '${widget.download.contentId ?? 'unknown'}:'
+            '${widget.download.seasonNumber ?? 0}:'
+            '${widget.download.episodeNumber ?? 0}';
+    await WellnessProvider.instance.recordPlayback(
+      sessionId: _wellnessSessionId,
+      tracker: _wellnessTracker,
+      mediaType: isMovie ? WellnessMediaType.movie : WellnessMediaType.episode,
+      source: WellnessPlaybackSource.offline,
+      contentId: contentId,
+      seriesId: isMovie ? null : widget.download.contentId?.toString(),
+      title: widget.download.title,
+      subtitle: widget.download.subtitle,
+      seasonNumber: widget.download.seasonNumber,
+      episodeNumber: widget.download.episodeNumber,
+      durationMs: value?.duration?.inMilliseconds ?? 0,
+      progressEndMs: value?.position.inMilliseconds ?? 0,
+      completed: _completed,
+      posterPath: widget.download.posterUrl,
+      provider: 'Downloaded',
+      syncImmediately: syncImmediately,
     );
   }
 
@@ -222,7 +290,12 @@ class _OfflinePlayerScreenState extends State<OfflinePlayerScreen> {
 
   @override
   void dispose() {
-    if (_initialized) _controller.dispose();
+    if (_initialized) {
+      _controller.removeEventsListener(_onPlayerEvent);
+      _wellnessTracker.pause();
+      unawaited(_persistWellnessSession(syncImmediately: true));
+      _controller.dispose();
+    }
     SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,

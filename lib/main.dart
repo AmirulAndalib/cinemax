@@ -17,6 +17,7 @@ import 'provider/recently_watched_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'provider/settings_provider.dart';
+import 'provider/wellness_provider.dart';
 import 'services/bookmark_sync_service.dart';
 import 'singleton/sharedpreferences_singleton.dart';
 import 'tv/platform/device_presentation.dart';
@@ -37,6 +38,7 @@ SettingsProvider settingsProvider = SettingsProvider();
 RecentProvider recentProvider = RecentProvider();
 BookmarkProvider bookmarkProvider = BookmarkProvider();
 AppDependencyProvider appDependencyProvider = AppDependencyProvider();
+WellnessProvider wellnessProvider = WellnessProvider.instance;
 final Future<FirebaseApp> _initialization = Firebase.initializeApp();
 
 Future<DevicePresentation> appInitialize({
@@ -122,6 +124,7 @@ Future<DevicePresentation> appInitialize({
   await recentProvider.fetchMovies();
   await recentProvider.fetchEpisodes();
   await bookmarkProvider.fetchBookmarks();
+  await wellnessProvider.initialize();
   await appDependencyProvider.getFlixQuestLogo();
   await appDependencyProvider.getOccasionalTheme();
   await appDependencyProvider.getAmbientMode();

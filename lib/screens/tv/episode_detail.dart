@@ -18,6 +18,7 @@ import '../../provider/app_dependency_provider.dart';
 import '../../functions/network.dart';
 import '../../models/credits.dart';
 import '../../models/images.dart';
+import '../../models/genres.dart';
 import '../person/cast_detail.dart';
 import 'tvepisode_castandcrew.dart';
 import '../../models/tv_stream_metadata.dart';
@@ -54,6 +55,8 @@ class EpisodeDetailPageState extends State<EpisodeDetailPage>
   final scrollController = ScrollController();
   late Future<Credits> _credits;
   late Future<Images> _images;
+  late Future<List<Genres>> _genres;
+  late Future<TVDetails> _seriesDetails;
   final AmbientThemeScopeController _ambientTheme =
       AmbientThemeScopeController();
 
@@ -78,8 +81,20 @@ class EpisodeDetailPageState extends State<EpisodeDetailPage>
     if (tvId == null || season == null || episode == null) {
       _credits = Future.value(Credits());
       _images = Future.value(Images());
+      _genres = Future.value(const <Genres>[]);
+      _seriesDetails = Future.value(TVDetails());
       return;
     }
+    _genres = fetchGenre(
+      Endpoints.tvDetailsUrl(tvId, settings.appLanguage),
+      settings.enableProxy,
+      proxy,
+    );
+    _seriesDetails = fetchTVDetails(
+      Endpoints.tvDetailsUrl(tvId, settings.appLanguage),
+      settings.enableProxy,
+      proxy,
+    );
     _credits = fetchCredits(
       Endpoints.getEpisodeCredits(
         tvId,
@@ -116,6 +131,8 @@ class EpisodeDetailPageState extends State<EpisodeDetailPage>
       return;
     }
     if (!mounted || widget.tvId == null || widget.posterPath == null) return;
+    final wellnessMetadata = await _wellnessMetadataSnapshot();
+    if (!mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -132,6 +149,9 @@ class EpisodeDetailPageState extends State<EpisodeDetailPage>
             seriesName: widget.seriesName ?? '',
             tvId: widget.tvId!,
             airDate: widget.episodeList.airDate,
+            genres: wellnessMetadata.$1,
+            languages: wellnessMetadata.$2,
+            countries: wellnessMetadata.$3,
           ),
         ),
       ),
@@ -148,6 +168,8 @@ class EpisodeDetailPageState extends State<EpisodeDetailPage>
       return;
     }
     if (!mounted || widget.tvId == null || widget.posterPath == null) return;
+    final wellnessMetadata = await _wellnessMetadataSnapshot();
+    if (!mounted) return;
     final queued = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -164,6 +186,9 @@ class EpisodeDetailPageState extends State<EpisodeDetailPage>
             seriesName: widget.seriesName ?? '',
             tvId: widget.tvId!,
             airDate: widget.episodeList.airDate,
+            genres: wellnessMetadata.$1,
+            languages: wellnessMetadata.$2,
+            countries: wellnessMetadata.$3,
           ),
         ),
       ),
@@ -173,6 +198,37 @@ class EpisodeDetailPageState extends State<EpisodeDetailPage>
         const SnackBar(content: Text('Added to downloads')),
       );
     }
+  }
+
+  Future<(List<String>, List<String>, List<String>)>
+      _wellnessMetadataSnapshot() async {
+    List<Genres>? genres;
+    TVDetails? details;
+    try {
+      genres = await _genres;
+    } catch (_) {}
+    try {
+      details = await _seriesDetails;
+    } catch (_) {}
+    final genreNames = genres
+            ?.map((genre) => genre.genreName?.trim())
+            .whereType<String>()
+            .where((name) => name.isNotEmpty)
+            .toList(growable: false) ??
+        const <String>[];
+    final languages = details?.spokenLanguages
+            ?.map((language) => language.englishName?.trim())
+            .whereType<String>()
+            .where((name) => name.isNotEmpty)
+            .toList(growable: false) ??
+        const <String>[];
+    final countries = details?.productionCountries
+            ?.map((country) => country.name?.trim())
+            .whereType<String>()
+            .where((name) => name.isNotEmpty)
+            .toList(growable: false) ??
+        const <String>[];
+    return (genreNames, languages, countries);
   }
 
   @override

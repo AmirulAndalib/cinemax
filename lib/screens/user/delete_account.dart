@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '/provider/settings_provider.dart';
+import '../../provider/wellness_provider.dart';
 import '../../ui_components/app_ui_components.dart';
 
 class DeleteAccountScreen extends StatefulWidget {
@@ -68,6 +69,7 @@ class DeleteAccountScreenState extends State<DeleteAccountScreen> {
               .doc(uid)
               .delete()
               .then((value) async {
+            await WellnessProvider.instance.deleteAccountData(uid!);
             await FirebaseFirestore.instance
                 .collection('bookmarks-v2.0')
                 .doc(uid)

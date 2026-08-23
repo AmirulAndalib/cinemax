@@ -23,6 +23,7 @@ class AppSessionStateStore {
     'series',
     'live',
     'library',
+    'wellness',
     'profile',
     'settings',
   };

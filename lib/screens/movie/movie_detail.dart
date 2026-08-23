@@ -213,6 +213,8 @@ class MovieDetailPageState extends State<MovieDetailPage>
       return;
     }
     if (!mounted) return;
+    final wellnessMetadata = await _wellnessMetadataSnapshot();
+    if (!mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -227,6 +229,9 @@ class MovieDetailPageState extends State<MovieDetailPage>
             posterPath: widget.movie.posterPath,
             releaseYear: int.tryParse(_releaseYear ?? '') ?? 0,
             releaseDate: widget.movie.releaseDate,
+            genres: wellnessMetadata.$1,
+            languages: wellnessMetadata.$2,
+            countries: wellnessMetadata.$3,
           ),
         ),
       ),
@@ -243,6 +248,8 @@ class MovieDetailPageState extends State<MovieDetailPage>
       return;
     }
     if (!mounted) return;
+    final wellnessMetadata = await _wellnessMetadataSnapshot();
+    if (!mounted) return;
     final queued = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -257,6 +264,9 @@ class MovieDetailPageState extends State<MovieDetailPage>
             posterPath: widget.movie.posterPath,
             releaseYear: int.tryParse(_releaseYear ?? '') ?? 0,
             releaseDate: widget.movie.releaseDate,
+            genres: wellnessMetadata.$1,
+            languages: wellnessMetadata.$2,
+            countries: wellnessMetadata.$3,
           ),
         ),
       ),
@@ -266,6 +276,40 @@ class MovieDetailPageState extends State<MovieDetailPage>
         const SnackBar(content: Text('Added to downloads')),
       );
     }
+  }
+
+  Future<(List<String>, List<String>, List<String>)>
+      _wellnessMetadataSnapshot() async {
+    List<Genres>? genres;
+    MovieDetails? details;
+    try {
+      genres = await _genres;
+    } catch (_) {}
+    try {
+      details = await _details;
+    } catch (_) {}
+    final genreNames = genres
+            ?.map((genre) => genre.genreName?.trim())
+            .whereType<String>()
+            .where((name) => name.isNotEmpty)
+            .toList(growable: false) ??
+        const <String>[];
+    final languages = details?.spokenLanguages
+            ?.map((language) => language.englishName?.trim())
+            .whereType<String>()
+            .where((name) => name.isNotEmpty)
+            .toList(growable: false) ??
+        <String>[
+          if (widget.movie.originalLanguage?.trim().isNotEmpty == true)
+            widget.movie.originalLanguage!.trim(),
+        ];
+    final countries = details?.productionCountries
+            ?.map((country) => country.name?.trim())
+            .whereType<String>()
+            .where((name) => name.isNotEmpty)
+            .toList(growable: false) ??
+        const <String>[];
+    return (genreNames, languages, countries);
   }
 
   void _showWatchProviders() {

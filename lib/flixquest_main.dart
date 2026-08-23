@@ -25,6 +25,7 @@ import 'widgets/tv_widgets.dart';
 import 'widgets/occasional_effect_overlay.dart';
 import 'provider/bookmark_provider.dart';
 import 'provider/offline_download_provider.dart';
+import 'provider/wellness_provider.dart';
 import 'services/in_app_messaging_service.dart';
 import 'services/app_session_state_store.dart';
 import 'services/app_remote_config.dart';
@@ -160,6 +161,7 @@ class _FlixQuestState extends State<FlixQuest>
                 ChangeNotifierProvider(
                   create: (_) => OfflineDownloadProvider()..initialize(),
                 ),
+                ChangeNotifierProvider.value(value: WellnessProvider.instance),
               ],
               child: Consumer3<SettingsProvider, RecentProvider,
                       AppDependencyProvider>(

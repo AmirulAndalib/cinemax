@@ -24,6 +24,7 @@ import '../screens/tv_media_details_screen.dart';
 import '../screens/tv_profile_screen.dart';
 import '../screens/tv_search_screen.dart';
 import '../screens/tv_settings_screen.dart';
+import '../screens/tv_wellness_screen.dart';
 import '../widgets/tv_navigation_rail.dart';
 import 'tv_design.dart';
 
@@ -96,6 +97,12 @@ class _TvHomeShellState extends State<TvHomeShell> with RestorationMixin {
         label: 'My List',
         icon: PhosphorIcons.bookmarkSimple(),
         selectedIcon: PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill),
+      ),
+      TvNavigationDestination(
+        id: 'wellness',
+        label: 'Insights',
+        icon: PhosphorIcons.chartDonut(),
+        selectedIcon: PhosphorIcons.chartDonut(PhosphorIconsStyle.fill),
       ),
       TvNavigationDestination(
         id: 'profile',
@@ -368,6 +375,7 @@ class _TvHomeShellState extends State<TvHomeShell> with RestorationMixin {
                                     metrics: metrics,
                                     onOpenMedia: _openMedia,
                                   ),
+                                  TvWellnessScreen(metrics: metrics),
                                   TvProfileScreen(metrics: metrics),
                                   TvSettingsScreen(
                                     metrics: metrics,

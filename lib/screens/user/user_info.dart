@@ -14,6 +14,7 @@ import '../common/about.dart';
 import '../common/server_status_screen.dart';
 import '../common/settings.dart' as app_settings;
 import '../common/update_screen.dart';
+import '../wellness/wellness_screen.dart';
 import 'edit_profile.dart';
 
 class UserInfo extends StatefulWidget {
@@ -134,6 +135,10 @@ class _UserInfoState extends State<UserInfo> {
               ),
             ),
             const SizedBox(height: 28),
+            WellnessPreviewCard(
+              onTap: () => _push(const WellnessScreen()),
+            ),
+            const SizedBox(height: 14),
             _profileActions(authenticated: false),
           ],
         ),
@@ -267,6 +272,10 @@ class _UserInfoState extends State<UserInfo> {
             //   ),
             // ),
             const SizedBox(height: 10),
+            WellnessPreviewCard(
+              onTap: () => _push(const WellnessScreen()),
+            ),
+            const SizedBox(height: 14),
             _profileActions(authenticated: true),
           ],
         ),

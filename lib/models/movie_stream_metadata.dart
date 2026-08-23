@@ -7,6 +7,9 @@ class MovieStreamMetadata {
   int? elapsed;
   bool? isAdult;
   String? releaseDate;
+  List<String> genres;
+  List<String> languages;
+  List<String> countries;
   List<MovieRecommendation>? recommendations; // Top 10 recommended movies
   Function(int movieId)? onMovieChange; // Callback to load new movie
 
@@ -19,6 +22,9 @@ class MovieStreamMetadata {
     required this.releaseYear,
     required this.isAdult,
     required this.releaseDate,
+    this.genres = const <String>[],
+    this.languages = const <String>[],
+    this.countries = const <String>[],
     this.recommendations,
     this.onMovieChange,
   });
