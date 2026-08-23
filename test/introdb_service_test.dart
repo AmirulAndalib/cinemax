@@ -81,4 +81,29 @@ void main() {
     expect(timings.segments[1].startMs, 12000);
     expect(timings.segments[1].endMs, isNull);
   });
+
+  test('moves out-of-range credits to the final five percent', () async {
+    final service = IntroDbService(
+      client: MockClient(
+        (_) async => http.Response(
+          '{"intro":[{"start_ms":1500000,"end_ms":1510000}],'
+          '"credits":[{"start_ms":1746000,"end_ms":null}]}',
+          200,
+        ),
+      ),
+    );
+
+    final timings = await service.fetch(
+      tmdbId: 2316,
+      isTv: true,
+      season: 1,
+      episode: 1,
+      durationMs: 1400000,
+    );
+
+    expect(timings.segments, hasLength(1));
+    expect(timings.segments.single.type, IntroDbSegmentType.credits);
+    expect(timings.segments.single.startMs, 1330000);
+    expect(timings.segments.single.endMs, 1400000);
+  });
 }

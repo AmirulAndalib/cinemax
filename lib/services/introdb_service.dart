@@ -92,12 +92,16 @@ class IntroDbService {
       }
     }
     final merged = _merge(segments);
+    final normalized = durationMs != null && durationMs > 0
+        ? _normalizeToDuration(merged, durationMs)
+        : merged;
     debugPrint(
       '[IntroDB] parsed ${segments.length} ranges, '
-      'merged=${merged.length} '
-      'types=${merged.map((segment) => segment.type.name).join(',')}',
+      'merged=${merged.length} normalized=${normalized.length} '
+      'ranges=${normalized.map((segment) => '${segment.type.name}:'
+          '${segment.startMs}-${segment.endMs ?? 'end'}').join(',')}',
     );
-    return IntroDbTimings(merged);
+    return IntroDbTimings(normalized);
   }
 
   String _keyFor(IntroDbSegmentType type) => switch (type) {
@@ -137,6 +141,48 @@ class IntroDbService {
     }
     merged.sort((a, b) => a.startMs.compareTo(b.startMs));
     return List.unmodifiable(merged);
+  }
+
+  List<IntroDbSegment> _normalizeToDuration(
+    List<IntroDbSegment> segments,
+    int durationMs,
+  ) {
+    final normalized = <IntroDbSegment>[];
+    for (final segment in segments) {
+      var startMs = segment.startMs;
+      var endMs = segment.endMs;
+      if (startMs >= durationMs) {
+        if (segment.type != IntroDbSegmentType.credits) {
+          debugPrint(
+            '[IntroDB] discarded out-of-range ${segment.type.name} '
+            '${segment.startMs}-${segment.endMs ?? 'end'} '
+            'durationMs=$durationMs',
+          );
+          continue;
+        }
+        // Some entries describe a longer cut than the selected provider. An
+        // open-ended credits marker beyond this stream can never activate, so
+        // fall back to the final 5% rather than losing both end controls.
+        startMs = (durationMs * .95).floor();
+        endMs = durationMs;
+        debugPrint(
+          '[IntroDB] adjusted out-of-range credits '
+          '${segment.startMs}-${segment.endMs ?? 'end'} -> '
+          '$startMs-$endMs durationMs=$durationMs',
+        );
+      } else if (endMs == null || endMs > durationMs) {
+        endMs = durationMs;
+      }
+      if (endMs <= startMs) continue;
+      normalized.add(
+        IntroDbSegment(
+          type: segment.type,
+          startMs: startMs,
+          endMs: endMs,
+        ),
+      );
+    }
+    return List<IntroDbSegment>.unmodifiable(normalized);
   }
 
   int? _intValue(dynamic value) =>

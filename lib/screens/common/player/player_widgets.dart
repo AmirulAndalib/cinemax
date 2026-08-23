@@ -15,28 +15,66 @@ class PlayerNextEpisodeWidget {
     required TVStreamMetadata tvMetadata,
     required bool showNextEpisodeButton,
     required bool controlsVisible,
-    required List<Color> colors,
     required Function() onSaveProgress,
     required Function() closePlayer,
     bool useTvPlayer = false,
   }) {
     final episodes = tvMetadata.seasonEpisodes;
-    if (episodes == null) return const SizedBox.shrink();
+    if (episodes == null) {
+      debugPrint(
+        '[NextEpisodeDebug][floating_build_skipped] reason=no_episodes',
+      );
+      return const SizedBox.shrink();
+    }
     final currentIndex = episodes.indexWhere(
       (episode) =>
           episode.episodeNumber == tvMetadata.episodeNumber &&
           episode.seasonNumber == tvMetadata.seasonNumber,
     );
     if (currentIndex < 0 || currentIndex >= episodes.length - 1) {
+      debugPrint(
+        '[NextEpisodeDebug][floating_build_skipped] '
+        'reason=no_matching_next current=S${tvMetadata.seasonNumber}'
+        'E${tvMetadata.episodeNumber} currentIndex=$currentIndex '
+        'episodes=${episodes.length}',
+      );
       return const SizedBox.shrink();
     }
     final nextEpisode = episodes[currentIndex + 1];
+    debugPrint(
+      '[NextEpisodeDebug][floating_build] '
+      'currentIndex=$currentIndex next=S${nextEpisode.seasonNumber}'
+      'E${nextEpisode.episodeNumber} show=$showNextEpisodeButton '
+      'controlsVisible=$controlsVisible',
+    );
     final navigator = Navigator.of(context);
-    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
+    final safeTop = MediaQuery.viewPaddingOf(context).top;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final buttonSurface = Color.alphaBlend(
+      colors.primary.withValues(alpha: .10),
+      colors.surfaceContainerHigh,
+    );
+
+    void playNextEpisode() {
+      onSaveProgress();
+      closePlayer();
+      navigator.pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => TVVideoLoader(
+            download: false,
+            useTvPlayer: useTvPlayer,
+            forceAutoLoad: true,
+            metadata: _metadataForEpisode(nextEpisode, tvMetadata),
+          ),
+        ),
+      );
+    }
 
     return AnimatedPositioned(
+      key: const ValueKey('next_episode_teaser_position'),
       right: 16,
-      bottom: safeBottom + (controlsVisible ? 124 : 16),
+      top: safeTop + (controlsVisible ? 72 : 16),
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       child: IgnorePointer(
@@ -48,55 +86,53 @@ class PlayerNextEpisodeWidget {
           child: AnimatedOpacity(
             opacity: showNextEpisodeButton ? 1 : 0,
             duration: const Duration(milliseconds: 220),
-            child: SizedBox(
-              width:
-                  (MediaQuery.sizeOf(context).width * .48).clamp(220.0, 330.0),
-              child: PlayerChoiceCard(
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                textColor: Theme.of(context).colorScheme.onPrimary,
-                secondaryTextColor:
-                    Theme.of(context).colorScheme.onPrimary.withValues(alpha: .82),
-                title:
-                    '${nextEpisode.episodeNumber}. ${nextEpisode.episodeName}',
-                subtitle: tr('next_episode'),
-                description: nextEpisode.overview,
-                thumbnail: PlayerThumbnail(
-                  width: 108,
-                  height: 68,
-                  child: nextEpisode.stillPath == null
-                      ? Icon(PhosphorIcons.filmStrip())
-                      : CachedNetworkImage(
-                          cacheManager: cacheProp(),
-                          imageUrl:
-                              'https://image.tmdb.org/t/p/w300${nextEpisode.stillPath}',
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              const AppCachedImagePlaceholder(),
-                          errorWidget: (_, __, ___) =>
-                              Icon(PhosphorIcons.filmStrip()),
+            child: Material(
+              key: const ValueKey('next_episode_teaser'),
+              color: buttonSurface,
+              surfaceTintColor: Colors.transparent,
+              elevation: 8,
+              shadowColor: colors.shadow.withValues(alpha: .45),
+              clipBehavior: Clip.antiAlias,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(
+                  color: colors.primary.withValues(alpha: .38),
+                ),
+              ),
+              child: InkWell(
+                onTap: playNextEpisode,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: .16),
+                          borderRadius: BorderRadius.circular(9),
                         ),
-                ),
-                trailing: Icon(
-                  PhosphorIcons.playCircle(PhosphorIconsStyle.fill),
-                  color: Theme.of(context).colorScheme.onPrimary,
-                ),
-                onTap: () {
-                  onSaveProgress();
-                  closePlayer();
-                  navigator.pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => TVVideoLoader(
-                        download: false,
-                        useTvPlayer: useTvPlayer,
-                        forceAutoLoad: true,
-                        metadata: _metadataForEpisode(
-                          nextEpisode,
-                          tvMetadata,
+                        child: Icon(
+                          PhosphorIcons.skipForward(PhosphorIconsStyle.fill),
+                          color: colors.primary,
+                          size: 17,
                         ),
                       ),
-                    ),
-                  );
-                },
+                      const SizedBox(width: 10),
+                      Text(
+                        '${tr('next_episode')} · E${nextEpisode.episodeNumber}',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: colors.onSurface,
+                          fontFamily: 'FigtreeSB',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -143,11 +179,18 @@ class PlayerNextEpisodeWidget {
       );
     }
 
-    showDialog<void>(
+    final dialog = showDialog<void>(
       context: context,
       useRootNavigator: true,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) {
+          if (timer == null) {
+            debugPrint(
+              '[NextEpisodeDebug][countdown_builder] '
+              'mounted=${dialogContext.mounted} '
+              'context=${identityHashCode(dialogContext)}',
+            );
+          }
           timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
             if (dismissed) return;
             if (countdown <= 1) {
@@ -157,7 +200,8 @@ class PlayerNextEpisodeWidget {
             }
           });
           return Dialog(
-            insetPadding: const EdgeInsets.all(20),
+            alignment: Alignment.bottomCenter,
+            insetPadding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             clipBehavior: Clip.antiAlias,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 560),
@@ -258,10 +302,26 @@ class PlayerNextEpisodeWidget {
           );
         },
       ),
-    ).whenComplete(() {
-      dismissed = true;
-      timer?.cancel();
-    });
+    );
+    dialog.then(
+      (_) {
+        debugPrint('[NextEpisodeDebug][countdown_closed]');
+        dismissed = true;
+        timer?.cancel();
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint(
+          '[NextEpisodeDebug][countdown_error] '
+          'type=${error.runtimeType} error=$error',
+        );
+        debugPrintStack(
+          label: '[NextEpisodeDebug][countdown_stack]',
+          stackTrace: stackTrace,
+        );
+        dismissed = true;
+        timer?.cancel();
+      },
+    );
   }
 
   TVStreamMetadata _metadataForEpisode(

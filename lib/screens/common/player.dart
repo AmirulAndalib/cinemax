@@ -36,6 +36,7 @@ import 'player/player_external_subtitles.dart';
 import 'player/player_local_subtitles.dart';
 import 'player/player_episode_selection.dart';
 import 'player/player_movie_recommendations.dart';
+import 'player/player_next_episode_policy.dart';
 import 'player/player_sheet_ui.dart';
 import 'player/player_widgets.dart';
 import 'download_selection_sheets.dart';
@@ -98,6 +99,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
   static const int _bufferForPlaybackAfterRebufferMs = 12000;
 
   late BetterPlayerController _betterPlayerController;
+  bool _betterPlayerControllerInitialized = false;
   final StreamIntroService _introService = StreamIntroService();
   final IntroDbService _introDbService = IntroDbService();
   final BetterPlayerTvControlsController _tvControlsController =
@@ -137,6 +139,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
   bool _introDbCreditsActive = false;
   int _introDbRequestId = 0;
   bool _introDbLookupComplete = false;
+  bool _introDbLookupSettled = false;
   bool _playbackCompletionHandled = false;
   final PlayerCompletionDetector _completionDetector = PlayerCompletionDetector(
     stalledEndTolerance: const Duration(seconds: 12),
@@ -145,6 +148,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
   Timer? _progressCheckTimer;
   OverlayEntry? _nextEpisodeOverlay;
   bool _playerControlsVisible = false;
+  String? _lastNextEpisodeDebugSignature;
   Timer? _tvNextEpisodeTimer;
   EpisodeMetadata? _tvNextEpisode;
   int? _tvNextEpisodeCountdown;
@@ -460,6 +464,10 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       videoHeaders: _activeVideoHeaders,
     );
     _betterPlayerController = BetterPlayerController(betterPlayerConfiguration);
+    _betterPlayerControllerInitialized = true;
+    if (widget.mediaType == MediaType.tvShow) {
+      _logNextEpisodeState('player_init', force: true);
+    }
     settings.addListener(_syncAmbientGlowSetting);
     _syncAmbientGlowSetting();
     _betterPlayerController.setBetterPlayerGlobalKey(_betterPlayerKey);
@@ -525,8 +533,10 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
         );
       } else {
         _preRollActive = false;
-        await _betterPlayerController.setupDataSource(dataSource);
-        await _betterPlayerController.seekTo(initialPosition);
+        await _betterPlayerController.setupDataSource(
+          dataSource,
+          initialPosition: initialPosition,
+        );
       }
       if (!mounted) return;
       _applyPreferredAdaptiveQuality();
@@ -661,6 +671,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
         _activeIntroDbSegment = null;
         _introDbCreditsActive = false;
         _introDbLookupComplete = false;
+        _introDbLookupSettled = false;
         _skippedIntroDbSegments.clear();
         break;
       case BetterPlayerEventType.changedResolution:
@@ -760,6 +771,17 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
         if (duration != null && duration.inMilliseconds > 0) {
           if (_preRollActive) return;
 
+          // Completion exclusively owns the post-play surface. Without this
+          // guard the periodic monitor sees 100% progress and recreates the
+          // teaser immediately after completion removed it.
+          if (_playbackCompletionHandled) {
+            if (_showNextEpisodeButton || _nextEpisodeOverlay != null) {
+              _showNextEpisodeButton = false;
+              _hideNextEpisodeOverlay();
+            }
+            return;
+          }
+
           _updateIntroDbSegment(position, duration);
 
           final value = _betterPlayerController.videoPlayerController!.value;
@@ -776,11 +798,33 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
 
           if (widget.mediaType != MediaType.tvShow) return;
           final progress = position.inMilliseconds / duration.inMilliseconds;
+          final hasIntroDbOutroTiming = _introDbTimings.segments.any(
+            (segment) => segment.type == IntroDbSegmentType.credits,
+          );
+          final introDbOutroReached = _introDbTimings.segments.any(
+            (segment) =>
+                segment.type == IntroDbSegmentType.credits &&
+                position.inMilliseconds >= segment.startMs,
+          );
+          final shouldShowNextEpisode = shouldShowNextEpisodeTeaser(
+            progress: progress,
+            introDbLookupSettled: _introDbLookupSettled,
+            hasIntroDbOutroTiming: hasIntroDbOutroTiming,
+            introDbOutroReached: introDbOutroReached,
+          );
+          if (progress >= 0.90 || introDbOutroReached) {
+            _logNextEpisodeState(
+              'near_end',
+              position: position,
+              duration: duration,
+            );
+          }
 
-          // Surface the next episode near the end. TV playback already owns the
-          // full screen route, so Better Player's internal fullscreen flag is
-          // intentionally false there.
-          if ((progress >= 0.95 || _introDbCreditsActive) &&
+          // An IntroDB outro is authoritative. The percentage threshold is
+          // only a fallback once the lookup has settled without an outro.
+          // TV playback already owns the full screen route, so Better Player's
+          // internal fullscreen flag is intentionally false there.
+          if (shouldShowNextEpisode &&
               !_showNextEpisodeButton &&
               !_nextEpisodeButtonDismissed &&
               _hasNextEpisode() &&
@@ -792,7 +836,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
             } else {
               _showNextEpisodeOverlay();
             }
-          } else if (((progress < 0.95 && !_introDbCreditsActive) ||
+          } else if ((!shouldShowNextEpisode ||
                   (!widget.useTvControls && !isFullScreen)) &&
               _showNextEpisodeButton) {
             _showNextEpisodeButton = false;
@@ -823,6 +867,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     final tmdbId =
         isTv ? widget.tvMetadata?.tvId : widget.movieMetadata?.movieId;
     if (tmdbId == null || tmdbId <= 0) {
+      _introDbLookupSettled = true;
       debugPrint(
         '[Player][IntroDB] lookup skipped: missing TMDB ID '
         'mediaType=${widget.mediaType} tvId=${widget.tvMetadata?.tvId} '
@@ -837,6 +882,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       'episode=${widget.tvMetadata?.episodeNumber} durationMs=$durationMs',
     );
     _introDbLoading = true;
+    _introDbLookupSettled = false;
     final requestId = ++_introDbRequestId;
     try {
       final timings = await _introDbService.fetch(
@@ -857,11 +903,14 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
         '[Player][IntroDB] timings ready count=${timings.segments.length}',
       );
     } catch (error) {
-      _introDbLookupComplete = false;
-      debugPrint('[Player][IntroDB] timings unavailable: $error');
+      if (requestId == _introDbRequestId) {
+        _introDbLookupComplete = false;
+        debugPrint('[Player][IntroDB] timings unavailable: $error');
+      }
     } finally {
       if (requestId == _introDbRequestId) {
         _introDbLoading = false;
+        _introDbLookupSettled = true;
       }
     }
   }
@@ -898,6 +947,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       debugPrint('[Player][IntroDB] credits active=$creditsActive');
     }
     if (creditsActive &&
+        !_playbackCompletionHandled &&
         settings.enableNextEpisodeButton &&
         widget.mediaType == MediaType.tvShow &&
         _hasNextEpisode() &&
@@ -919,6 +969,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     }
     if (active != _activeIntroDbSegment && mounted) {
       setState(() => _activeIntroDbSegment = active);
+      _nextEpisodeOverlay?.markNeedsBuild();
     }
     if (active == null) {
       for (final segment in _introDbTimings.segments) {
@@ -942,6 +993,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       '${segment.startMs}ms -> ${endMs}ms',
     );
     setState(() => _activeIntroDbSegment = null);
+    _nextEpisodeOverlay?.markNeedsBuild();
     // IntroDB is always user-driven. This is the only IntroDB path that seeks,
     // and it is invoked exclusively by the visible skip button.
     unawaited(_betterPlayerController.seekTo(Duration(milliseconds: endMs)));
@@ -967,6 +1019,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
   }
 
   bool _hasNextEpisode() {
+    _restoreEpisodeSnapshotIfNeeded('has_next_episode');
     final episodes = widget.tvMetadata?.seasonEpisodes;
     if (episodes == null || episodes.isEmpty) {
       return false;
@@ -977,7 +1030,99 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     return currentIndex >= 0 && currentIndex < episodes.length - 1;
   }
 
+  void _restoreEpisodeSnapshotIfNeeded(String stage) {
+    final metadata = widget.tvMetadata;
+    if (metadata == null ||
+        metadata.seasonEpisodes?.isNotEmpty == true ||
+        _contentMenuEpisodes.isEmpty) {
+      return;
+    }
+    metadata.seasonEpisodes = List<EpisodeMetadata>.of(_contentMenuEpisodes);
+    debugPrint(
+      '[NextEpisodeDebug][episodes_restored] stage=$stage '
+      'snapshotEpisodes=${_contentMenuEpisodes.length} '
+      'current=S${metadata.seasonNumber}E${metadata.episodeNumber}',
+    );
+  }
+
+  void _logNextEpisodeState(
+    String stage, {
+    Duration? position,
+    Duration? duration,
+    bool force = false,
+  }) {
+    _restoreEpisodeSnapshotIfNeeded(stage);
+    final metadata = widget.tvMetadata;
+    final episodes = metadata?.seasonEpisodes;
+    final currentIndex = _currentEpisodeIndex();
+    final strictIndex = episodes?.indexWhere(
+          (episode) =>
+              episode.episodeNumber == metadata?.episodeNumber &&
+              episode.seasonNumber == metadata?.seasonNumber,
+        ) ??
+        -1;
+    final hasNext = episodes != null &&
+        currentIndex >= 0 &&
+        currentIndex < episodes.length - 1;
+    final nextEpisode = hasNext ? episodes[currentIndex + 1] : null;
+    final isFullScreen = _betterPlayerControllerInitialized
+        ? _betterPlayerController.isFullScreen
+        : null;
+    final hasIntroDbOutroTiming = _introDbTimings.segments.any(
+      (segment) => segment.type == IntroDbSegmentType.credits,
+    );
+    final introDbOutroReached = position != null &&
+        _introDbTimings.segments.any(
+          (segment) =>
+              segment.type == IntroDbSegmentType.credits &&
+              position.inMilliseconds >= segment.startMs,
+        );
+    final signature = <Object?>[
+      stage,
+      metadata?.seasonNumber,
+      metadata?.episodeNumber,
+      metadata?.episodeId,
+      episodes?.length,
+      currentIndex,
+      strictIndex,
+      nextEpisode?.seasonNumber,
+      nextEpisode?.episodeNumber,
+      hasNext,
+      widget.useTvControls,
+      isFullScreen,
+      betterPlayerControlsConfiguration.enableNextEpisodeButton,
+      _showNextEpisodeButton,
+      _nextEpisodeButtonDismissed,
+      _introDbCreditsActive,
+      _introDbLookupSettled,
+      hasIntroDbOutroTiming,
+      introDbOutroReached,
+    ].join('|');
+    if (!force && signature == _lastNextEpisodeDebugSignature) return;
+    _lastNextEpisodeDebugSignature = signature;
+    final progress = position != null &&
+            duration != null &&
+            duration.inMilliseconds > 0
+        ? (position.inMilliseconds / duration.inMilliseconds).toStringAsFixed(4)
+        : 'n/a';
+    debugPrint(
+      '[NextEpisodeDebug][$stage] media=S${metadata?.seasonNumber}'
+      'E${metadata?.episodeNumber} episodeId=${metadata?.episodeId} '
+      'episodes=${episodes?.length ?? 0} currentIndex=$currentIndex '
+      'strictIndex=$strictIndex hasNext=$hasNext '
+      'next=S${nextEpisode?.seasonNumber}E${nextEpisode?.episodeNumber} '
+      'progress=$progress positionMs=${position?.inMilliseconds} '
+      'durationMs=${duration?.inMilliseconds} tvControls=${widget.useTvControls} '
+      'fullscreen=$isFullScreen setting='
+      '${betterPlayerControlsConfiguration.enableNextEpisodeButton} '
+      'show=$_showNextEpisodeButton dismissed=$_nextEpisodeButtonDismissed '
+      'credits=$_introDbCreditsActive introDbSettled=$_introDbLookupSettled '
+      'outroTiming=$hasIntroDbOutroTiming outroReached=$introDbOutroReached',
+    );
+  }
+
   int _currentEpisodeIndex() {
+    _restoreEpisodeSnapshotIfNeeded('current_episode_index');
     final metadata = widget.tvMetadata;
     final episodes = metadata?.seasonEpisodes;
     if (metadata == null || episodes == null || episodes.isEmpty) return -1;
@@ -996,7 +1141,19 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
   }
 
   void _showNextEpisodeOverlay() {
-    if (_nextEpisodeOverlay != null) return;
+    _logNextEpisodeState('floating_overlay_requested', force: true);
+    if (_playbackCompletionHandled) {
+      debugPrint(
+        '[NextEpisodeDebug][floating_overlay_skipped] reason=completed',
+      );
+      return;
+    }
+    if (_nextEpisodeOverlay != null) {
+      debugPrint(
+        '[NextEpisodeDebug][floating_overlay_skipped] reason=already_inserted',
+      );
+      return;
+    }
 
     _nextEpisodeOverlay = OverlayEntry(
       builder: (context) => _nextEpisodeWidget.buildNextEpisodeFloatingButton(
@@ -1004,13 +1161,16 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
         tvMetadata: widget.tvMetadata!,
         showNextEpisodeButton: _showNextEpisodeButton,
         controlsVisible: _playerControlsVisible,
-        colors: widget.colors,
         onSaveProgress: _handleContentSwitch,
         closePlayer: () => Navigator.pop(context),
       ),
     );
 
     Overlay.of(context, rootOverlay: true).insert(_nextEpisodeOverlay!);
+    debugPrint(
+      '[NextEpisodeDebug][floating_overlay_inserted] '
+      'overlay=${identityHashCode(Overlay.of(context, rootOverlay: true))}',
+    );
   }
 
   void _hideNextEpisodeOverlay() {
@@ -1468,6 +1628,12 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
   }
 
   void _handleVideoFinished() {
+    if (widget.mediaType == MediaType.tvShow) {
+      _restoreEpisodeSnapshotIfNeeded('video_finished');
+    }
+    if (widget.mediaType == MediaType.tvShow) {
+      _logNextEpisodeState('video_finished', force: true);
+    }
     debugPrint(
       '[MovieRecommendationsDebug][VIDEO_FINISHED_ENTER] '
       'mediaType=${widget.mediaType} mounted=$mounted '
@@ -1493,6 +1659,12 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
           }
         } else {
           // Show countdown dialog for next episode
+          debugPrint(
+            '[NextEpisodeDebug][countdown_requested] '
+            'next=S${nextEpisode.seasonNumber}E${nextEpisode.episodeNumber} '
+            'contextMounted=${_playerModalContext.mounted} '
+            'scheduler=${WidgetsBinding.instance.schedulerPhase}',
+          );
           _nextEpisodeWidget.showNextEpisodeCountdown(
             context: _playerModalContext,
             nextEpisode: nextEpisode,
@@ -1590,6 +1762,11 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     // action. Native and fallback completion can arrive close together.
     _showNextEpisodeButton = false;
     _hideNextEpisodeOverlay();
+    setState(() {
+      _activeIntroDbSegment = null;
+      _introDbCreditsActive = false;
+    });
+    _betterPlayerController.setControlsVisibility(false);
     _handleVideoFinished();
   }
 
@@ -1817,7 +1994,17 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
 
   void _showTvNextEpisodePrompt({required bool startCountdown}) {
     final nextEpisode = _nextTvEpisode;
-    if (!mounted || nextEpisode == null) return;
+    _logNextEpisodeState(
+      startCountdown ? 'tv_countdown_requested' : 'tv_prompt_requested',
+      force: true,
+    );
+    if (!mounted || nextEpisode == null) {
+      debugPrint(
+        '[NextEpisodeDebug][tv_prompt_skipped] mounted=$mounted '
+        'nextEpisode=${nextEpisode == null ? 'null' : 'available'}',
+      );
+      return;
+    }
     _tvNextEpisodeTimer?.cancel();
     setState(() {
       _tvMenu = null;
@@ -2177,9 +2364,9 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
           videoFormats: nextSource.videoFormats,
           videoHeaders: nextSource.videoHeaders,
         ),
+        initialPosition: position,
       );
       _applyPreferredAdaptiveQuality();
-      await _betterPlayerController.seekTo(position);
       if (!wasPlaying) await _betterPlayerController.pause();
       unawaited(_loadIntroDbTimings());
 
@@ -2242,8 +2429,10 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       if (!mounted) return;
       if (replacementStarted && previousDataSource != null) {
         try {
-          await _betterPlayerController.setupDataSource(previousDataSource);
-          await _betterPlayerController.seekTo(position);
+          await _betterPlayerController.setupDataSource(
+            previousDataSource,
+            initialPosition: position,
+          );
           if (!wasPlaying) await _betterPlayerController.pause();
         } catch (restoreError) {
           debugPrint('Unable to restore provider after switch: $restoreError');
