@@ -4,11 +4,13 @@ import '../video_providers/scraper_api.dart';
 /// prerequisite for selecting a resolution.
 abstract final class StreamSizeEstimator {
   static const Duration timeout = Duration(seconds: 10);
+  static final Map<String, Future<StreamSizeEstimate?>> _inFlightByRequest = {};
 
   static Future<Map<String, int?>> load({
     required String scraperApiUrl,
     required Map<String, String> tokens,
     required Map<String, int?> cacheByToken,
+    void Function(String token, int? estimatedBytes)? onEstimate,
   }) async {
     final pendingByToken = <String, Future<StreamSizeEstimate?>>{};
 
@@ -18,8 +20,19 @@ abstract final class StreamSizeEstimator {
           pendingByToken.containsKey(token)) {
         continue;
       }
-      pendingByToken[token] =
-          ScraperApi(scraperApiUrl).estimateStreamSize(token);
+      final requestKey = '$scraperApiUrl\u0000$token';
+      final request = _inFlightByRequest.putIfAbsent(requestKey, () async {
+        try {
+          return await ScraperApi(scraperApiUrl).estimateStreamSize(token);
+        } finally {
+          _inFlightByRequest.remove(requestKey);
+        }
+      });
+      pendingByToken[token] = request.then((estimate) {
+        cacheByToken[token] = estimate?.estimatedBytes;
+        onEstimate?.call(token, estimate?.estimatedBytes);
+        return estimate;
+      });
     }
 
     final completed = <String, StreamSizeEstimate?>{};
@@ -41,6 +54,7 @@ abstract final class StreamSizeEstimator {
     for (final entry in tokens.entries) {
       if (!cacheByToken.containsKey(entry.value)) {
         cacheByToken[entry.value] = completed[entry.value]?.estimatedBytes;
+        onEstimate?.call(entry.value, cacheByToken[entry.value]);
       }
     }
     return {

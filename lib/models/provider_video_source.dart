@@ -1,5 +1,7 @@
 import 'package:better_player_plus/better_player_plus.dart';
 
+import '../video_providers/common.dart';
+
 /// Model to hold video sources from a specific provider
 class ProviderVideoSource {
   final String providerCode;
@@ -9,6 +11,7 @@ class ProviderVideoSource {
   final Map<String, Map<String, String>> videoHeaders;
   final Map<String, String> videoSizeTokens;
   final List<BetterPlayerSubtitlesSource> subtitles;
+  final List<RegularVideoLinks> rawVideoLinks;
 
   ProviderVideoSource({
     required this.providerCode,
@@ -18,5 +21,6 @@ class ProviderVideoSource {
     required this.videoHeaders,
     this.videoSizeTokens = const {},
     required this.subtitles,
+    this.rawVideoLinks = const [],
   });
 }

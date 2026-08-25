@@ -1,5 +1,6 @@
 import 'package:flixquest/provider/app_dependency_provider.dart';
 import 'package:flixquest/provider/settings_provider.dart';
+import 'package:flixquest/constants/app_constants.dart';
 import 'package:flixquest/tv/app/tv_design.dart';
 import 'package:flixquest/tv/focus/tv_focus_memory.dart';
 import 'package:flixquest/tv/focus/tv_screen_focus_controller.dart';
@@ -37,8 +38,9 @@ void main() {
     );
   });
 
-  setUp(() {
+  setUp(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
+    sharedPrefsSingleton = await SharedPreferences.getInstance();
   });
 
   testWidgets('content grid enters predictably and contains edge navigation',
@@ -184,6 +186,79 @@ void main() {
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
       'TV setting theme mode',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('subtitle settings are D-pad navigable and persist choices',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final settings = SettingsProvider();
+    final focusController = TvScreenFocusController()..requestFocus();
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsProvider>.value(value: settings),
+          ChangeNotifierProvider(create: (_) => AppDependencyProvider()),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: TvSettingsScreen(
+              metrics: metrics,
+              focusController: focusController,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    for (var index = 0; index < 6; index++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+    }
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'Subtitle settings, 17px, Regular, White',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+    expect(find.text('Subtitle settings'), findsNWidgets(2));
+    expect(find.text('Font size'), findsOneWidget);
+    expect(find.text('Text color'), findsOneWidget);
+    expect(find.text('Background color'), findsOneWidget);
+    expect(find.text('Text weight'), findsOneWidget);
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'Font size, 17px',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+    expect(find.text('Subtitle font size'), findsOneWidget);
+    expect(FocusManager.instance.primaryFocus?.debugLabel, '17px');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(FocusManager.instance.primaryFocus?.debugLabel, '20px');
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+    expect(settings.subtitleFontSize, 20);
+    expect(find.text('Subtitle font size'), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text('Subtitle settings'), findsOneWidget);
+    expect(find.text('20px, Regular, White'), findsOneWidget);
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'Subtitle settings, 17px, Regular, White',
     );
     expect(tester.takeException(), isNull);
   });

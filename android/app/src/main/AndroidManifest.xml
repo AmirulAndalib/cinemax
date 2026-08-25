@@ -66,7 +66,66 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="es.antonborri.home_widget.action.LAUNCH" />
+            </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".widgets.MovieOfDayWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_movie_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_movie_of_day" />
+        </receiver>
+        <receiver
+            android:name=".widgets.TvShowOfDayWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_tv_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_tv_show_of_day" />
+        </receiver>
+        <receiver
+            android:name=".widgets.WellnessWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_wellness_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_wellness" />
+        </receiver>
+        <receiver
+            android:name=".widgets.ContinueWatchingWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_continue_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_continue_watching" />
+        </receiver>
+        <receiver
+            android:name=".widgets.MyListWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_my_list_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_my_list" />
+        </receiver>
         
         <provider
             android:name="vn.hunghd.flutterdownloader.DownloadedFileProvider"

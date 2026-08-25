@@ -11,6 +11,7 @@ import '../../models/movie_stream_metadata.dart';
 import '../../models/provider_video_source.dart';
 import '../../video_providers/names.dart';
 import '../../video_providers/provider_loader.dart';
+import '../../video_providers/common.dart';
 import '../../functions/video_utils.dart';
 import '../../functions/player_subtitle_configuration.dart';
 import '/constants/app_constants.dart';
@@ -61,6 +62,7 @@ class PlayerOne extends StatefulWidget {
       this.videoFormats,
       this.videoHeaders = const {},
       this.videoSizeTokens = const {},
+      this.initialVideoLinks = const [],
       this.prefetchedProviderResults = const {},
       this.useTvControls = false,
       this.onTvPlayerExit,
@@ -83,6 +85,7 @@ class PlayerOne extends StatefulWidget {
   final Map<String, BetterPlayerVideoFormat?>? videoFormats;
   final Map<String, Map<String, String>> videoHeaders;
   final Map<String, String> videoSizeTokens;
+  final List<RegularVideoLinks> initialVideoLinks;
   final Map<String, Future<ProviderLoaderResult>> prefetchedProviderResults;
   final bool useTvControls;
   final VoidCallback? onTvPlayerExit;
@@ -164,11 +167,15 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
   final Map<String, ProviderVideoSource> _loadedProviders =
       {}; // Cache loaded providers
   late final Map<String, Future<ProviderLoaderResult>> _providerResults;
+  final Map<String, Future<ProviderLoaderResult>> _fullProviderResults = {};
+  final Map<String, List<RegularVideoLinks>> _rawVideoLinksByProvider = {};
   late Map<String, String> _activeSources;
   late List<BetterPlayerSubtitlesSource> _activeSubtitles;
   late Map<String, BetterPlayerVideoFormat?>? _activeVideoFormats;
   late Map<String, Map<String, String>> _activeVideoHeaders;
   late Map<String, String> _activeVideoSizeTokens;
+  final Map<String, int> _sizeRequestGenerations = {};
+  final Completer<void> _initialDataSourceReady = Completer<void>();
   final Map<String, int?> _streamSizeCacheByToken = {};
   final Set<String> _loadingProviders =
       {}; // Track which providers are being loaded
@@ -202,6 +209,11 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
         widget.videoFormats == null ? null : Map.of(widget.videoFormats!);
     _activeVideoHeaders = Map.of(widget.videoHeaders);
     _activeVideoSizeTokens = Map.of(widget.videoSizeTokens);
+    final initialProviderCode = widget.currentProviderCode;
+    if (initialProviderCode != null && widget.initialVideoLinks.isNotEmpty) {
+      _rawVideoLinksByProvider[initialProviderCode] =
+          List.of(widget.initialVideoLinks);
+    }
     _contentMenuRecommendations = List<MovieRecommendation>.of(
       widget.movieMetadata?.recommendations ?? const <MovieRecommendation>[],
     );
@@ -483,6 +495,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     // Attach listeners before setup so native initialization and pre-roll
     // transition events cannot race the first platform callback.
     unawaited(_setupInitialDataSource(dataSource));
+    unawaited(_startActiveProviderEnrichment());
 
     // Monitor every stream because some platform/provider combinations reach
     // the final timestamp without delivering Better Player's finished event.
@@ -559,6 +572,10 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     } catch (error) {
       _preRollActive = false;
       debugPrint('[Player] Initial stream setup failed: $error');
+    } finally {
+      if (!_initialDataSourceReady.isCompleted) {
+        _initialDataSourceReady.complete();
+      }
     }
   }
 
@@ -1250,6 +1267,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       for (final source in sources.entries)
         source.key: _resolutionDisplayName(source.key),
     };
+    final resolutionDescriptions = _resolutionDescriptions(sources);
 
     return BetterPlayerDataSource(
       BetterPlayerDataSourceType.network,
@@ -1261,6 +1279,8 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       resolutionHeaders: sources.length > 1 ? resolutionHeaders : null,
       resolutionDisplayNames:
           sources.length > 1 ? resolutionDisplayNames : null,
+      resolutionDescriptions:
+          sources.length > 1 ? resolutionDescriptions : null,
       videoFormat: videoFormats?[selectedSource.key] ?? _inferVideoFormat(link),
       headers: resolvedHeaders,
       castConfiguration: widget.useTvControls
@@ -1306,6 +1326,219 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
   String _resolutionDisplayName(String sourceKey) {
     final separator = sourceKey.indexOf(' · ');
     return separator < 0 ? sourceKey : sourceKey.substring(0, separator);
+  }
+
+  VideoProvider? _providerByCode(String? code) {
+    if (code == null) return null;
+    for (final provider
+        in widget.availableProviders ?? const <VideoProvider>[]) {
+      if (provider.codeName == code) return provider;
+    }
+    return null;
+  }
+
+  Future<void> _startActiveProviderEnrichment() async {
+    final providerCode = _currentProviderCode;
+    final provider = _providerByCode(providerCode);
+    if (providerCode == null ||
+        provider?.type != VideoProviderType.scraperApi) {
+      await _initialDataSourceReady.future;
+      unawaited(_loadActiveSourceSizes(providerCode));
+      return;
+    }
+    final fullResult = _fullProviderResults[providerCode] ??=
+        widget.mediaType == MediaType.movie
+            ? ProviderLoader.loadMovieFromProvider(
+                provider: provider!,
+                movieId: widget.movieMetadata!.movieId!,
+                scraperApiUrl: _resolveScraperApiUrl(),
+                full: true,
+              )
+            : ProviderLoader.loadTVFromProvider(
+                provider: provider!,
+                tvId: widget.tvMetadata!.tvId!,
+                seasonNumber: widget.tvMetadata!.seasonNumber!,
+                episodeNumber: widget.tvMetadata!.episodeNumber!,
+                scraperApiUrl: _resolveScraperApiUrl(),
+                full: true,
+              );
+    await _initialDataSourceReady.future;
+    if (!mounted || providerCode != _currentProviderCode) return;
+    unawaited(_loadActiveSourceSizes(providerCode));
+    final result = await fullResult;
+    if (!mounted || providerCode != _currentProviderCode) return;
+    if (result.success && result.videoLinks?.isNotEmpty == true) {
+      _mergeActiveProviderResult(providerCode, result);
+    }
+    unawaited(_loadActiveSourceSizes(providerCode));
+  }
+
+  void _mergeActiveProviderResult(
+    String providerCode,
+    ProviderLoadResult result,
+  ) {
+    final merged = <RegularVideoLinks>[];
+    final seen = <String>{};
+    for (final link in [
+      ...(_rawVideoLinksByProvider[providerCode] ??
+          const <RegularVideoLinks>[]),
+      ...?result.videoLinks,
+    ]) {
+      final identity = _videoLinkIdentity(link);
+      if (identity != null && seen.add(identity)) merged.add(link);
+    }
+    if (merged.isEmpty) return;
+    _rawVideoLinksByProvider[providerCode] = merged;
+    final sources = VideoUtils.reverseVideoQualityMap(
+      VideoUtils.convertVideoLinksToMap(merged),
+    );
+    final formats = VideoUtils.reverseVideoQualityMap(
+      VideoUtils.convertVideoFormatsToMap(merged),
+    );
+    final headers = VideoUtils.reverseVideoQualityMap(
+      VideoUtils.convertVideoHeadersToMap(merged),
+    );
+    final tokens = VideoUtils.reverseVideoQualityMap(
+      VideoUtils.convertVideoSizeTokensToMap(merged),
+    );
+    final currentUrl = _betterPlayerController.betterPlayerDataSource?.url;
+    final selected = sources.entries
+        .firstWhere(
+          (entry) => entry.value == currentUrl,
+          orElse: () => sources.entries.first,
+        )
+        .key;
+    final mergedSubtitles = _mergeSubtitles(result.subtitleLinks ?? const []);
+    final allSubtitles = <BetterPlayerSubtitlesSource>[
+      ...mergedSubtitles,
+      ..._localSubtitles.appliedSubtitles,
+      ..._externalSubtitles.appliedSubtitles,
+    ];
+    _activeSources = sources;
+    _activeVideoFormats = formats;
+    _activeVideoHeaders = headers;
+    _activeVideoSizeTokens = tokens;
+    _activeSubtitles = mergedSubtitles;
+    _loadedProviders[providerCode] = ProviderVideoSource(
+      providerCode: providerCode,
+      providerName: _providerDisplayName(providerCode),
+      videoSources: sources,
+      videoFormats: formats,
+      videoHeaders: headers,
+      videoSizeTokens: tokens,
+      subtitles: mergedSubtitles,
+      rawVideoLinks: merged,
+    );
+    if (!_betterPlayerControllerInitialized ||
+        _betterPlayerController.betterPlayerDataSource == null) {
+      return;
+    }
+    _betterPlayerController.updateDataSourceMetadata(
+      resolutions: sources,
+      selectedResolution: selected,
+      resolutionVideoFormats: formats,
+      resolutionHeaders: headers,
+      resolutionDisplayNames: _resolutionNames(sources),
+      resolutionDescriptions: _resolutionDescriptions(sources),
+      subtitles: allSubtitles,
+    );
+    setState(() {});
+  }
+
+  String? _videoLinkIdentity(RegularVideoLinks link) {
+    final url = link.url?.trim();
+    if (url == null || url.isEmpty) return null;
+    final headers = (link.headers ?? const <String, String>{})
+        .entries
+        .map((entry) => '${entry.key.toLowerCase()}=${entry.value.trim()}')
+        .toList()
+      ..sort();
+    final format = link.isM3U8 == true
+        ? 'hls'
+        : link.isDash == true
+            ? 'dash'
+            : 'other';
+    return '$url|$format|${headers.join('&')}';
+  }
+
+  List<BetterPlayerSubtitlesSource> _mergeSubtitles(
+    List<RegularSubtitleLinks> additional,
+  ) {
+    final merged = List<BetterPlayerSubtitlesSource>.of(_activeSubtitles);
+    final keys = <String>{
+      for (final subtitle in merged)
+        '${subtitle.urls?.first ?? ''}|${subtitle.name ?? ''}',
+    };
+    for (final subtitle in additional) {
+      final url = subtitle.url?.trim();
+      final language = subtitle.language ?? tr('not_available');
+      if (url == null || url.isEmpty || !keys.add('$url|$language')) continue;
+      merged.add(BetterPlayerSubtitlesSource(
+        type: BetterPlayerSubtitlesSourceType.network,
+        urls: [url],
+        name: language,
+        headers: subtitle.headers,
+      ));
+    }
+    return merged;
+  }
+
+  Future<void> _loadActiveSourceSizes(String? providerCode) async {
+    if (!mounted ||
+        providerCode != _currentProviderCode ||
+        _activeVideoSizeTokens.isEmpty) {
+      return;
+    }
+    final cacheKey = providerCode ?? '';
+    final generation = (_sizeRequestGenerations[cacheKey] ?? 0) + 1;
+    _sizeRequestGenerations[cacheKey] = generation;
+    final tokens = Map<String, String>.of(_activeVideoSizeTokens);
+    await StreamSizeEstimator.load(
+      scraperApiUrl: _resolveScraperApiUrl(),
+      tokens: tokens,
+      cacheByToken: _streamSizeCacheByToken,
+      onEstimate: (_, __) {
+        if (!mounted ||
+            providerCode != _currentProviderCode ||
+            _sizeRequestGenerations[cacheKey] != generation) {
+          return;
+        }
+        _betterPlayerController.updateDataSourceMetadata(
+          resolutionDisplayNames: _resolutionNames(_activeSources),
+        );
+      },
+    );
+    if (mounted &&
+        providerCode == _currentProviderCode &&
+        _sizeRequestGenerations[cacheKey] == generation) {
+      _betterPlayerController.updateDataSourceMetadata(
+        resolutionDisplayNames: _resolutionNames(_activeSources),
+      );
+    }
+  }
+
+  Map<String, String> _resolutionNames(Map<String, String> sources) => {
+        for (final key in sources.keys)
+          key: () {
+            final token = _activeVideoSizeTokens[key];
+            final bytes = token == null ? null : _streamSizeCacheByToken[token];
+            final base = _resolutionDisplayName(key);
+            return bytes == null ? base : '$base (~${_formatBytes(bytes)})';
+          }(),
+      };
+
+  Map<String, String> _resolutionDescriptions(Map<String, String> sources) => {
+        for (final key in sources.keys)
+          if (key.contains(' · ')) key: key.split(' · ').skip(1).join(' · '),
+      };
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    final kb = bytes / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
+    final mb = kb / 1024;
+    if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
+    return '${(mb / 1024).toStringAsFixed(1)} GB';
   }
 
   String? _castArtworkUrl() {
@@ -2448,8 +2681,10 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
             VideoUtils.convertVideoSizeTokensToMap(result.videoLinks!),
           ),
           subtitles: subtitles,
+          rawVideoLinks: result.videoLinks!,
         );
         _loadedProviders[providerCode] = source;
+        _rawVideoLinksByProvider[providerCode] = List.of(result.videoLinks!);
       }
 
       if (!mounted) return;
@@ -2553,6 +2788,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
         });
         if (switched) {
           closeMenu();
+          unawaited(_startActiveProviderEnrichment());
         } else {
           refreshMenu();
         }
@@ -2654,24 +2890,41 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
 
   Future<void> _downloadFromCurrentProvider() async {
     if (_activeSources.isEmpty) return;
+    await _startActiveProviderEnrichment();
+    if (!mounted || _activeSources.isEmpty) return;
     final providerName = _currentProviderName();
     final sources = Map<String, String>.of(_activeSources);
     final formats = _activeVideoFormats == null
         ? <String, BetterPlayerVideoFormat?>{}
         : Map<String, BetterPlayerVideoFormat?>.of(_activeVideoFormats!);
     final headers = Map<String, Map<String, String>>.of(_activeVideoHeaders);
-    final estimatedSizes = await StreamSizeEstimator.load(
+    final estimatedSizes = ValueNotifier<Map<String, int?>>({
+      for (final entry in _activeVideoSizeTokens.entries)
+        if (_streamSizeCacheByToken.containsKey(entry.value))
+          entry.key: _streamSizeCacheByToken[entry.value],
+    });
+    var sizePickerOpen = true;
+    unawaited(StreamSizeEstimator.load(
       scraperApiUrl: _resolveScraperApiUrl(),
       tokens: _activeVideoSizeTokens,
       cacheByToken: _streamSizeCacheByToken,
-    );
-    if (!mounted) return;
+      onEstimate: (token, bytes) {
+        if (!sizePickerOpen) return;
+        final next = Map<String, int?>.of(estimatedSizes.value);
+        for (final entry in _activeVideoSizeTokens.entries) {
+          if (entry.value == token) next[entry.key] = bytes;
+        }
+        estimatedSizes.value = next;
+      },
+    ));
     final resolution = await DownloadSelectionSheets.showResolution(
       context,
       resolutions: sources.keys.toList(),
       providerName: providerName,
-      estimatedSizes: estimatedSizes,
+      estimatedSizesListenable: estimatedSizes,
     );
+    sizePickerOpen = false;
+    estimatedSizes.dispose();
     if (!mounted || resolution == null) return;
 
     final url = sources[resolution];

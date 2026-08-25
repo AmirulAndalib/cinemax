@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_poster_description">Poster</string>
+    <string name="widget_movie_name">Movie of the day</string>
+    <string name="widget_tv_name">TV show of the day</string>
+    <string name="widget_wellness_name">Viewing insights</string>
+    <string name="widget_continue_name">Continue watching</string>
+    <string name="widget_my_list_name">My List</string>
+</resources>

@@ -239,6 +239,80 @@ void main() {
       });
     });
 
+    test('requests every movie server when full is enabled', () async {
+      late Uri requestedUri;
+      final api = ScraperApi(
+        'https://scraper.example',
+        client: MockClient((request) async {
+          requestedUri = request.url;
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'provider': 'vidsrc',
+              'links': [
+                {
+                  'url': 'https://scraper.example/full-movie',
+                  'quality': '1080p',
+                  'isM3U8': true,
+                  'subtitles': [],
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      await api.loadMovie(providerId: 'vidsrc', movieId: 42, full: true);
+
+      expect(requestedUri.queryParameters, {
+        'tmdbId': '42',
+        'full': 'true',
+        'provider': 'vidsrc',
+      });
+    });
+
+    test('requests every TV server when full is enabled', () async {
+      late Uri requestedUri;
+      final api = ScraperApi(
+        'https://scraper.example',
+        client: MockClient((request) async {
+          requestedUri = request.url;
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'provider': 'vidsrc',
+              'links': [
+                {
+                  'url': 'https://scraper.example/full-tv',
+                  'quality': '720p',
+                  'isM3U8': true,
+                  'subtitles': [],
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      await api.loadTVEpisode(
+        providerId: 'vidsrc',
+        tvId: 99,
+        seasonNumber: 2,
+        episodeNumber: 3,
+        full: true,
+      );
+
+      expect(requestedUri.queryParameters, {
+        'tmdbId': '99',
+        'season': '2',
+        'episode': '3',
+        'full': 'true',
+        'provider': 'vidsrc',
+      });
+    });
+
     test('posts a signed token and maps a stream size estimate', () async {
       late http.Request request;
       final api = ScraperApi(

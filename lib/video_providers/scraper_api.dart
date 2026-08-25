@@ -79,10 +79,14 @@ class ScraperApi {
   Future<ProviderLoadResult> loadMovie({
     required String providerId,
     required int movieId,
+    bool full = false,
   }) {
     return _loadStream(
       '/stream-movie',
-      _buildQueryParams(providerId, {'tmdbId': '$movieId'}),
+      _buildQueryParams(providerId, {
+        'tmdbId': '$movieId',
+        if (full) 'full': 'true',
+      }),
     );
   }
 
@@ -91,6 +95,7 @@ class ScraperApi {
     required int tvId,
     required int seasonNumber,
     required int episodeNumber,
+    bool full = false,
   }) {
     return _loadStream(
       '/stream-tv',
@@ -98,6 +103,7 @@ class ScraperApi {
         'tmdbId': '$tvId',
         'season': '$seasonNumber',
         'episode': '$episodeNumber',
+        if (full) 'full': 'true',
       }),
     );
   }

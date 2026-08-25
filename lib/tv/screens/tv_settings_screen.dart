@@ -3,6 +3,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/app_colors.dart';
+import '../../functions/subtitle_style.dart';
 import '../../provider/settings_provider.dart';
 import '../../provider/app_dependency_provider.dart';
 import '../app/tv_design.dart';
@@ -158,6 +159,15 @@ class TvSettingsScreen extends StatelessWidget {
                       icon: PhosphorIcons.lightning(),
                       onActivate: () =>
                           settings.autoLoadSources = !settings.autoLoadSources,
+                    ),
+                    const SizedBox(height: 14),
+                    _TvSettingTile(
+                      key: const ValueKey<String>('subtitle-settings'),
+                      label: 'Subtitle settings',
+                      value: _subtitleSummary(settings),
+                      icon: PhosphorIcons.closedCaptioning(),
+                      onActivate: () =>
+                          _showSubtitleSettings(context, settings),
                     ),
                   ],
                 ),
@@ -321,6 +331,299 @@ class TvSettingsScreen extends StatelessWidget {
             },
           ),
       ],
+    );
+  }
+
+  static String _subtitleSummary(SettingsProvider settings) {
+    final textColor = parseStoredSubtitleColor(
+      settings.subtitleForegroundColor,
+      fallback: Colors.white,
+    );
+    final style = normalizeSubtitleTextStyle(settings.subtitleTextStyle);
+    final weight = switch (style) {
+      'light' => 'Light',
+      'bold' => 'Bold',
+      _ => 'Regular',
+    };
+    return '${settings.subtitleFontSize}px, $weight, ${_colorName(textColor)}';
+  }
+
+  static String _colorName(Color color) {
+    for (final entry in _subtitleTextColors.entries) {
+      if (entry.value.toARGB32() == color.toARGB32()) return entry.key;
+    }
+    for (final entry in _subtitleBackgroundColors.entries) {
+      if (entry.value.toARGB32() == color.toARGB32()) return entry.key;
+    }
+    return 'Custom';
+  }
+
+  static const Map<String, Color> _subtitleTextColors = <String, Color>{
+    'White': Colors.white,
+    'Yellow': Colors.yellow,
+    'Cyan': Colors.cyan,
+    'Green': Colors.greenAccent,
+    'Magenta': Colors.pinkAccent,
+  };
+
+  static const Map<String, Color> _subtitleBackgroundColors = <String, Color>{
+    'Transparent': Colors.transparent,
+    'Black 45%': Colors.black45,
+    'Black 70%': Color(0xB3000000),
+    'Black': Colors.black,
+  };
+
+  static Future<void> _showSubtitleSettings(
+    BuildContext context,
+    SettingsProvider settings,
+  ) {
+    return showTvDialog<void>(
+      context: context,
+      title: 'Subtitle settings',
+      content: const _TvSubtitleSettingsContent(),
+      autofocusFirstAction: false,
+      actions: <TvDialogAction>[
+        TvDialogAction(
+          label: 'Done',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
+    );
+  }
+
+  static Future<void> _showSubtitleFontSizePicker(
+    BuildContext context,
+    SettingsProvider settings,
+  ) {
+    final options = <int>[for (var size = 5; size <= 30; size += 5) size];
+    if (!options.contains(settings.subtitleFontSize)) {
+      options.add(settings.subtitleFontSize);
+      options.sort();
+    }
+    return showTvDialog<void>(
+      context: context,
+      title: 'Subtitle font size',
+      content: const Text('Choose the subtitle text size.'),
+      actions: <TvDialogAction>[
+        for (final size in options)
+          TvDialogAction(
+            label: '${size}px',
+            autofocus: settings.subtitleFontSize == size,
+            isPrimary: settings.subtitleFontSize == size,
+            onPressed: () {
+              settings.subtitleFontSize = size;
+              Navigator.of(context).pop();
+            },
+          ),
+      ],
+    );
+  }
+
+  static Future<void> _showSubtitleColorPicker(
+    BuildContext context,
+    SettingsProvider settings, {
+    required bool foreground,
+  }) {
+    final current = parseStoredSubtitleColor(
+      foreground
+          ? settings.subtitleForegroundColor
+          : settings.subtitleBackgroundColor,
+      fallback: foreground ? Colors.white : Colors.black45,
+    );
+    final palette =
+        foreground ? _subtitleTextColors : _subtitleBackgroundColors;
+    return showTvDialog<void>(
+      context: context,
+      title: foreground ? 'Subtitle text color' : 'Subtitle background color',
+      content: const Text('Choose a color for subtitles.'),
+      actions: <TvDialogAction>[
+        for (final entry in palette.entries)
+          TvDialogAction(
+            label: entry.key,
+            autofocus: current.toARGB32() == entry.value.toARGB32(),
+            isPrimary: current.toARGB32() == entry.value.toARGB32(),
+            onPressed: () {
+              final value = serializeSubtitleColor(entry.value);
+              if (foreground) {
+                settings.subtitleForegroundColor = value;
+              } else {
+                settings.subtitleBackgroundColor = value;
+              }
+              Navigator.of(context).pop();
+            },
+          ),
+      ],
+    );
+  }
+
+  static Future<void> _showSubtitleWeightPicker(
+    BuildContext context,
+    SettingsProvider settings,
+  ) {
+    const options = <String, String>{
+      'light': 'Light',
+      'regular': 'Regular',
+      'bold': 'Bold',
+    };
+    return showTvDialog<void>(
+      context: context,
+      title: 'Subtitle text weight',
+      content: const Text('Choose the subtitle font weight.'),
+      actions: <TvDialogAction>[
+        for (final option in options.entries)
+          TvDialogAction(
+            label: option.value,
+            autofocus: settings.subtitleTextStyle == option.key,
+            isPrimary: settings.subtitleTextStyle == option.key,
+            onPressed: () {
+              settings.subtitleTextStyle = option.key;
+              Navigator.of(context).pop();
+            },
+          ),
+      ],
+    );
+  }
+}
+
+class _TvSubtitleSettingsContent extends StatelessWidget {
+  const _TvSubtitleSettingsContent();
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsProvider>();
+    final foreground = parseStoredSubtitleColor(
+      settings.subtitleForegroundColor,
+      fallback: Colors.white,
+    );
+    final background = parseStoredSubtitleColor(
+      settings.subtitleBackgroundColor,
+      fallback: Colors.black45,
+    );
+    final weight =
+        switch (normalizeSubtitleTextStyle(settings.subtitleTextStyle)) {
+      'light' => 'Light',
+      'bold' => 'Bold',
+      _ => 'Regular',
+    };
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _TvSubtitleOption(
+          label: 'Font size',
+          value: '${settings.subtitleFontSize}px',
+          autofocus: true,
+          onActivate: () => TvSettingsScreen._showSubtitleFontSizePicker(
+            context,
+            settings,
+          ),
+        ),
+        _TvSubtitleOption(
+          label: 'Text color',
+          value: TvSettingsScreen._colorName(foreground),
+          color: foreground,
+          onActivate: () => TvSettingsScreen._showSubtitleColorPicker(
+            context,
+            settings,
+            foreground: true,
+          ),
+        ),
+        _TvSubtitleOption(
+          label: 'Background color',
+          value: TvSettingsScreen._colorName(background),
+          color: background,
+          onActivate: () => TvSettingsScreen._showSubtitleColorPicker(
+            context,
+            settings,
+            foreground: false,
+          ),
+        ),
+        _TvSubtitleOption(
+          label: 'Text weight',
+          value: weight,
+          onActivate: () => TvSettingsScreen._showSubtitleWeightPicker(
+            context,
+            settings,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TvSubtitleOption extends StatelessWidget {
+  const _TvSubtitleOption({
+    required this.label,
+    required this.value,
+    required this.onActivate,
+    this.color,
+    this.autofocus = false,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onActivate;
+  final Color? color;
+  final bool autofocus;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: TvFocusable(
+        semanticLabel: '$label, $value',
+        autofocus: autofocus,
+        onActivate: onActivate,
+        focusScale: 1.02,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: <Widget>[
+              if (color != null) ...<Widget>[
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: colors.outline),
+                  ),
+                ),
+                const SizedBox(width: 14),
+              ],
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: colors.onSurface,
+                    fontFamily: 'FigtreeSB',
+                    fontSize: 21,
+                  ),
+                ),
+              ),
+              Text(
+                value,
+                style: TextStyle(
+                  color: colors.onSurfaceVariant,
+                  fontSize: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Icon(
+                PhosphorIcons.caretRight(),
+                color: colors.onSurfaceVariant,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

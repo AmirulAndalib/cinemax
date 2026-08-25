@@ -80,6 +80,7 @@ abstract final class ProviderLoader {
     required VideoProvider provider,
     required int movieId,
     required String scraperApiUrl,
+    bool full = false,
   }) {
     switch (provider.type) {
       case VideoProviderType.directVixSrc:
@@ -94,6 +95,7 @@ abstract final class ProviderLoader {
         return ScraperApi(scraperApiUrl).loadMovie(
           providerId: providerId,
           movieId: movieId,
+          full: full,
         );
     }
   }
@@ -104,6 +106,7 @@ abstract final class ProviderLoader {
     required int seasonNumber,
     required int episodeNumber,
     required String scraperApiUrl,
+    bool full = false,
   }) {
     switch (provider.type) {
       case VideoProviderType.directVixSrc:
@@ -124,6 +127,7 @@ abstract final class ProviderLoader {
           tvId: tvId,
           seasonNumber: seasonNumber,
           episodeNumber: episodeNumber,
+          full: full,
         );
     }
   }

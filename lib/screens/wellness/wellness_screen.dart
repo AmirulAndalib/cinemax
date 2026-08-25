@@ -100,10 +100,7 @@ class _WellnessScreenState extends State<WellnessScreen> {
                           OutlinedButton.icon(
                             onPressed: _sharing
                                 ? null
-                                : () => _openShareRecap(
-                                      insights,
-                                      wellness.range,
-                                    ),
+                                : () => _openShareRecap(wellness),
                             icon: _sharing
                                 ? const SizedBox.square(
                                     dimension: 15,
@@ -115,6 +112,14 @@ class _WellnessScreenState extends State<WellnessScreen> {
                             label: const Text('Share recap'),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 18),
+                      _RecapShelf(
+                        sessions: wellness.sessions,
+                        onSelected: (period) => _openShareRecap(
+                          wellness,
+                          initialPeriod: period,
+                        ),
                       ),
                       const SizedBox(height: 18),
                       _StatGrid(insights: insights),
@@ -279,14 +284,20 @@ class _WellnessScreenState extends State<WellnessScreen> {
     );
   }
 
-  void _jumpToSection(GlobalKey key) {
-    final sectionContext = key.currentContext;
+  Future<void> _jumpToSection(GlobalKey key) async {
+    var sectionContext = key.currentContext;
+    if (sectionContext == null) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      sectionContext = key.currentContext;
+    }
     if (sectionContext == null) return;
     Scrollable.ensureVisible(
       sectionContext,
       duration: const Duration(milliseconds: 420),
       curve: Curves.easeOutCubic,
       alignment: .08,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
     );
   }
 
@@ -350,21 +361,25 @@ class _WellnessScreenState extends State<WellnessScreen> {
   }
 
   Future<void> _openShareRecap(
-    WellnessInsights insights,
-    WellnessRange range,
-  ) async {
+    WellnessProvider provider, {
+    _RecapPeriod? initialPeriod,
+  }) async {
     setState(() => _sharing = true);
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _ShareRecapSheet(
-        insights: insights,
-        range: range,
-      ),
-    );
-    if (mounted) setState(() => _sharing = false);
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => _ShareRecapSheet(
+          sessions: provider.sessions,
+          initialPeriod: initialPeriod ??
+              _recapPeriodForRange(provider.range, DateTime.now()),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
   }
 }
 
@@ -529,13 +544,96 @@ class _InsightsActionTile extends StatelessWidget {
   }
 }
 
+enum _RecapPeriodKind { day, week, month, year }
+
+class _RecapPeriod {
+  const _RecapPeriod({
+    required this.id,
+    required this.label,
+    required this.captionLabel,
+    required this.kind,
+    required this.startLocal,
+    required this.endLocal,
+  });
+
+  final String id;
+  final String label;
+  final String captionLabel;
+  final _RecapPeriodKind kind;
+  final DateTime startLocal;
+  final DateTime endLocal;
+
+  WellnessPeriod get wellnessPeriod => WellnessPeriod(
+        startUtc: startLocal.toUtc(),
+        endUtc: endLocal.toUtc(),
+      );
+
+  bool get isComplete => !endLocal.isAfter(DateTime.now());
+
+  factory _RecapPeriod.today(DateTime now) {
+    final start = DateTime(now.year, now.month, now.day);
+    return _RecapPeriod(
+      id: 'day-${DateFormat('yyyy-MM-dd').format(start)}',
+      label: 'Today',
+      captionLabel: 'Today’s recap',
+      kind: _RecapPeriodKind.day,
+      startLocal: start,
+      endLocal: start.add(const Duration(days: 1)),
+    );
+  }
+
+  factory _RecapPeriod.week(DateTime now) {
+    final today = DateTime(now.year, now.month, now.day);
+    final start = today.subtract(Duration(days: today.weekday - 1));
+    return _RecapPeriod(
+      id: 'week-${DateFormat('yyyy-MM-dd').format(start)}',
+      label: 'This week',
+      captionLabel: 'This week’s recap',
+      kind: _RecapPeriodKind.week,
+      startLocal: start,
+      endLocal: start.add(const Duration(days: 7)),
+    );
+  }
+
+  factory _RecapPeriod.month(DateTime month, DateTime now) {
+    final start = DateTime(month.year, month.month);
+    final current = start.year == now.year && start.month == now.month;
+    final label = current || start.year == now.year
+        ? DateFormat.MMMM().format(start)
+        : DateFormat.yMMMM().format(start);
+    return _RecapPeriod(
+      id: 'month-${DateFormat('yyyy-MM').format(start)}',
+      label: label,
+      captionLabel: 'My $label recap',
+      kind: _RecapPeriodKind.month,
+      startLocal: start,
+      endLocal: DateTime(start.year, start.month + 1),
+    );
+  }
+
+  factory _RecapPeriod.year(int year) {
+    final start = DateTime(year);
+    return _RecapPeriod(
+      id: 'year-$year',
+      label: '$year',
+      captionLabel: 'My $year recap',
+      kind: _RecapPeriodKind.year,
+      startLocal: start,
+      endLocal: DateTime(year + 1),
+    );
+  }
+}
+
 enum _RecapStyle { light, dark, lightsOut }
 
 class _ShareRecapSheet extends StatefulWidget {
-  const _ShareRecapSheet({required this.insights, required this.range});
+  const _ShareRecapSheet({
+    required this.sessions,
+    required this.initialPeriod,
+  });
 
-  final WellnessInsights insights;
-  final WellnessRange range;
+  final List<WellnessViewingSession> sessions;
+  final _RecapPeriod initialPeriod;
 
   @override
   State<_ShareRecapSheet> createState() => _ShareRecapSheetState();
@@ -544,6 +642,7 @@ class _ShareRecapSheet extends StatefulWidget {
 class _ShareRecapSheetState extends State<_ShareRecapSheet> {
   final GlobalKey _recapKey = GlobalKey();
   late _RecapStyle _style;
+  late _RecapPeriod _period;
   bool _includeTopTitle = true;
   bool _sharing = false;
 
@@ -557,17 +656,23 @@ class _ShareRecapSheetState extends State<_ShareRecapSheet> {
         : _isLightsOut(context)
             ? _RecapStyle.lightsOut
             : _RecapStyle.dark;
+    _period = widget.initialPeriod;
     _styleInitialized = true;
   }
 
   bool _styleInitialized = false;
 
+  WellnessInsights get _insights => WellnessInsights.fromSessions(
+        widget.sessions,
+        period: _period.wellnessPeriod,
+      );
+
   String get _caption {
-    final insights = widget.insights;
+    final insights = _insights;
     final title = _includeTopTitle && insights.topTitles.isNotEmpty
         ? ' My most-watched title was ${insights.topTitles.first.label}.'
         : '';
-    return 'My ${_rangeLabel(widget.range).toLowerCase()} on FlixQuest: '
+    return '${_period.captionLabel} on FlixQuest: '
         '${_duration(insights.totalWatchedMs)} of stories across '
         '${insights.activeDays} active ${insights.activeDays == 1 ? 'day' : 'days'}.$title';
   }
@@ -595,13 +700,15 @@ class _ShareRecapSheetState extends State<_ShareRecapSheet> {
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) throw StateError('Could not render recap image');
       final directory = await getTemporaryDirectory();
-      final file = File('${directory.path}/flixquest-viewing-recap.png');
+      final file = File(
+        '${directory.path}/flixquest-${_period.id}-recap.png',
+      );
       await file.writeAsBytes(byteData.buffer.asUint8List(), flush: true);
       if (!mounted) return;
       final box = context.findRenderObject() as RenderBox?;
       await Share.shareXFiles(
         <XFile>[XFile(file.path, mimeType: 'image/png')],
-        subject: 'My FlixQuest viewing recap',
+        subject: '${_period.label} FlixQuest recap',
         text: _caption,
         sharePositionOrigin:
             box == null ? null : box.localToGlobal(Offset.zero) & box.size,
@@ -621,6 +728,11 @@ class _ShareRecapSheetState extends State<_ShareRecapSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final insights = _insights;
+    final periods = _availableRecapPeriods(widget.sessions, DateTime.now());
+    if (!periods.any((period) => period.id == _period.id)) {
+      periods.insert(0, _period);
+    }
     return Material(
       color: colors.surface,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
@@ -658,7 +770,7 @@ class _ShareRecapSheetState extends State<_ShareRecapSheet> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Choose a look, control the details, then share.',
+                        'Pick a moment, choose a look, then make it yours.',
                         style: TextStyle(color: colors.onSurfaceVariant),
                       ),
                     ],
@@ -670,6 +782,46 @@ class _ShareRecapSheetState extends State<_ShareRecapSheet> {
                   icon: Icon(PhosphorIcons.x()),
                 ),
               ],
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'RECAP PERIOD',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontFamily: 'FigtreeSB',
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 40,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: periods.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final period = periods[index];
+                  final selected = period.id == _period.id;
+                  return ChoiceChip(
+                    label: Text(
+                      period.label,
+                      style: TextStyle(
+                        color: selected ? colors.onPrimary : colors.onSurface,
+                        fontFamily: selected ? 'FigtreeSB' : 'Figtree',
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                    ),
+                    selected: selected,
+                    showCheckmark: false,
+                    side: BorderSide.none,
+                    backgroundColor: _insightSurface(context, raised: true),
+                    selectedColor: colors.primary,
+                    onSelected: (_) => setState(() => _period = period),
+                  );
+                },
+              ),
             ),
             const SizedBox(height: 18),
             Text(
@@ -723,8 +875,8 @@ class _ShareRecapSheetState extends State<_ShareRecapSheet> {
                         width: 380,
                         height: 475,
                         child: _ShareRecapCard(
-                          insights: widget.insights,
-                          range: widget.range,
+                          insights: insights,
+                          period: _period,
                           style: _style,
                           includeTopTitle: _includeTopTitle,
                         ),
@@ -734,6 +886,16 @@ class _ShareRecapSheetState extends State<_ShareRecapSheet> {
                 ),
               ),
             ),
+            if (insights.isEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                'There isn’t enough viewing activity in ${_period.label.toLowerCase()} to make a recap yet.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+              ),
+            ],
             const SizedBox(height: 14),
             Container(
               decoration: BoxDecoration(
@@ -753,7 +915,7 @@ class _ShareRecapSheetState extends State<_ShareRecapSheet> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: _copyCaption,
+                    onPressed: insights.isEmpty ? null : _copyCaption,
                     icon: Icon(PhosphorIcons.copy(), size: 18),
                     label: const Text('Copy caption'),
                   ),
@@ -761,7 +923,8 @@ class _ShareRecapSheetState extends State<_ShareRecapSheet> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: _sharing ? null : _shareImage,
+                    onPressed:
+                        _sharing || insights.isEmpty ? null : _shareImage,
                     icon: _sharing
                         ? const SizedBox.square(
                             dimension: 16,
@@ -844,13 +1007,13 @@ class _RecapStyleChip extends StatelessWidget {
 class _ShareRecapCard extends StatelessWidget {
   const _ShareRecapCard({
     required this.insights,
-    required this.range,
+    required this.period,
     required this.style,
     required this.includeTopTitle,
   });
 
   final WellnessInsights insights;
-  final WellnessRange range;
+  final _RecapPeriod period;
   final _RecapStyle style;
   final bool includeTopTitle;
 
@@ -881,7 +1044,7 @@ class _ShareRecapCard extends StatelessWidget {
         ),
     };
     final foreground = palette.$5;
-    final bars = _recapBarData(insights, range);
+    final bars = _recapBarData(insights, period);
     final maxBar =
         bars.fold<int>(0, (max, item) => item.value > max ? item.value : max);
     final topTitle = insights.topTitles.firstOrNull?.label;
@@ -965,7 +1128,7 @@ class _ShareRecapCard extends StatelessWidget {
                         ),
                       ),
                       child: Text(
-                        _rangeLabel(range).toUpperCase(),
+                        period.label.toUpperCase(),
                         style: TextStyle(
                           color: foreground,
                           fontFamily: 'FigtreeSB',
@@ -1097,11 +1260,12 @@ class _ShareRecapCard extends StatelessWidget {
                                       widthFactor: 1,
                                       child: DecoratedBox(
                                         decoration: BoxDecoration(
-                                          color: bar.value == maxBar
-                                              ? palette.$4
-                                              : foreground.withValues(
-                                                  alpha: .26,
-                                                ),
+                                          color:
+                                              maxBar > 0 && bar.value == maxBar
+                                                  ? palette.$4
+                                                  : foreground.withValues(
+                                                      alpha: .26,
+                                                    ),
                                           borderRadius:
                                               const BorderRadius.vertical(
                                             top: Radius.circular(4),
@@ -1207,10 +1371,14 @@ class WellnessPreviewCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<WellnessProvider>();
+    final now = DateTime.now();
     final insights = WellnessInsights.fromSessions(
       provider.sessions,
-      period: WellnessPeriod.forRange(WellnessRange.week, DateTime.now()),
+      period: WellnessPeriod.forRange(WellnessRange.week, now),
     );
+    final featured = _featuredRecapPeriod(provider.sessions, now);
+    final featuredInsights = _insightsForPeriod(provider.sessions, featured);
+    final recapReady = featured.isComplete && !featuredInsights.isEmpty;
     final colors = Theme.of(context).colorScheme;
     return Container(
       clipBehavior: Clip.antiAlias,
@@ -1246,20 +1414,56 @@ class WellnessPreviewCard extends StatelessWidget {
                     ),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Icon(PhosphorIcons.chartDonut(), color: Colors.white),
+                  child: Icon(
+                    recapReady
+                        ? PhosphorIcons.confetti()
+                        : PhosphorIcons.chartDonut(),
+                    color: Colors.white,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Viewing Insights',
-                          style: Theme.of(context).textTheme.titleMedium),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Viewing Insights',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          if (recapReady)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colors.primary,
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                              child: Text(
+                                'RECAP READY',
+                                style: TextStyle(
+                                  color: colors.onPrimary,
+                                  fontFamily: 'FigtreeSB',
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: .7,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                       const SizedBox(height: 3),
                       Text(
-                        insights.isEmpty
-                            ? 'Your private viewing insights start here'
-                            : '${_duration(insights.totalWatchedMs)} this week • ${insights.completedTitles} completed',
+                        recapReady
+                            ? '${featured.label} recap is ready to revisit'
+                            : insights.isEmpty
+                                ? 'Your private viewing insights start here'
+                                : '${_duration(insights.totalWatchedMs)} this week • ${insights.completedTitles} completed',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -1725,6 +1929,207 @@ class _HeroMetric extends StatelessWidget {
                 ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RecapShelf extends StatelessWidget {
+  const _RecapShelf({required this.sessions, required this.onSelected});
+
+  final List<WellnessViewingSession> sessions;
+  final ValueChanged<_RecapPeriod> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final colors = Theme.of(context).colorScheme;
+    final featured = _featuredRecapPeriod(sessions, now);
+    final featuredInsights = _insightsForPeriod(sessions, featured);
+    final quickPeriods = <_RecapPeriod>[
+      _RecapPeriod.today(now),
+      _RecapPeriod.week(now),
+      _RecapPeriod.year(now.year),
+    ]
+        .where((period) => period.id != featured.id)
+        .where((period) {
+          return !_insightsForPeriod(sessions, period).isEmpty;
+        })
+        .take(3)
+        .toList(growable: false);
+    final ready = featured.isComplete;
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colors.primaryContainer.withValues(alpha: .72),
+            _insightSurface(context),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -28,
+            top: -38,
+            child: Icon(
+              PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+              size: 150,
+              color: colors.primary.withValues(alpha: .07),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(alpha: .1),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        ready ? 'RECAP READY' : 'YOUR RECAPS',
+                        style: TextStyle(
+                          color: colors.primary,
+                          fontFamily: 'FigtreeSB',
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: .9,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      ready
+                          ? PhosphorIcons.confetti()
+                          : PhosphorIcons.calendarDots(),
+                      color: colors.primary,
+                      size: 22,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  ready
+                      ? '${featured.label} recap is ready'
+                      : '${featured.label} recap is taking shape',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  featuredInsights.isEmpty
+                      ? 'Your next viewing session will start filling in this story.'
+                      : '${_duration(featuredInsights.totalWatchedMs)} watched · ${featuredInsights.completedTitles} completed · ${featuredInsights.activeDays} active ${featuredInsights.activeDays == 1 ? 'day' : 'days'}',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: featuredInsights.isEmpty
+                      ? null
+                      : () => onSelected(featured),
+                  icon: Icon(
+                    ready
+                        ? PhosphorIcons.sparkle()
+                        : PhosphorIcons.arrowUpRight(),
+                    size: 18,
+                  ),
+                  label: Text(ready ? 'See my recap' : 'Preview recap'),
+                ),
+                if (quickPeriods.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (var index = 0;
+                            index < quickPeriods.length;
+                            index++) ...[
+                          if (index > 0) const SizedBox(width: 8),
+                          _QuickRecapButton(
+                            period: quickPeriods[index],
+                            insights: _insightsForPeriod(
+                                sessions, quickPeriods[index]),
+                            onTap: () => onSelected(quickPeriods[index]),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickRecapButton extends StatelessWidget {
+  const _QuickRecapButton({
+    required this.period,
+    required this.insights,
+    required this.onTap,
+  });
+
+  final _RecapPeriod period;
+  final WellnessInsights insights;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: _insightSurface(context, raised: true),
+      borderRadius: BorderRadius.circular(15),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(PhosphorIcons.playCircle(), size: 17, color: colors.primary),
+              const SizedBox(width: 7),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    period.label,
+                    style: const TextStyle(
+                      fontFamily: 'FigtreeSB',
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                  Text(
+                    _duration(insights.totalWatchedMs),
+                    style: TextStyle(
+                      color: colors.onSurfaceVariant,
+                      fontFamily: 'Figtree',
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2487,6 +2892,12 @@ Color _insightSurface(BuildContext context, {bool raised = false}) {
       theme.scaffoldBackgroundColor,
     );
   }
+  if (theme.brightness == Brightness.light) {
+    return Color.alphaBlend(
+      theme.colorScheme.onSurface.withValues(alpha: raised ? .065 : .035),
+      theme.scaffoldBackgroundColor,
+    );
+  }
   return raised
       ? theme.colorScheme.surfaceContainerHighest
       : theme.colorScheme.surfaceContainerLow;
@@ -2642,30 +3053,140 @@ String _rangeName(WellnessRange range) => switch (range) {
       WellnessRange.allTime => 'all time',
     };
 
-String _rangeLabel(WellnessRange range) => switch (range) {
-      WellnessRange.week => 'This week',
-      WellnessRange.month => 'This month',
-      WellnessRange.year => 'This year',
-      WellnessRange.allTime => 'All time',
+_RecapPeriod _recapPeriodForRange(WellnessRange range, DateTime now) =>
+    switch (range) {
+      WellnessRange.week => _RecapPeriod.week(now),
+      WellnessRange.month => _RecapPeriod.month(now, now),
+      WellnessRange.year ||
+      WellnessRange.allTime =>
+        _RecapPeriod.year(now.year),
     };
+
+WellnessInsights _insightsForPeriod(
+  List<WellnessViewingSession> sessions,
+  _RecapPeriod period,
+) =>
+    WellnessInsights.fromSessions(
+      sessions,
+      period: period.wellnessPeriod,
+    );
+
+List<_RecapPeriod> _availableRecapPeriods(
+  List<WellnessViewingSession> sessions,
+  DateTime now,
+) {
+  final periods = <_RecapPeriod>[];
+  final ids = <String>{};
+  void add(_RecapPeriod period) {
+    if (ids.add(period.id)) periods.add(period);
+  }
+
+  add(_RecapPeriod.today(now));
+  add(_RecapPeriod.week(now));
+  add(_RecapPeriod.month(now, now));
+  add(_RecapPeriod.year(now.year));
+
+  final months = sessions
+      .where((session) => !session.isDeleted && session.qualifies)
+      .map((session) {
+        final local = session.startedAtUtc.add(
+          Duration(minutes: session.timezoneOffsetMinutes),
+        );
+        return DateTime(local.year, local.month);
+      })
+      .toSet()
+      .toList()
+    ..sort((a, b) => b.compareTo(a));
+  for (final month in months.take(12)) {
+    add(_RecapPeriod.month(month, now));
+  }
+
+  final years = months.map((month) => month.year).toSet().toList()
+    ..sort((a, b) => b.compareTo(a));
+  for (final year in years) {
+    add(_RecapPeriod.year(year));
+  }
+  return periods;
+}
+
+_RecapPeriod _featuredRecapPeriod(
+  List<WellnessViewingSession> sessions,
+  DateTime now,
+) {
+  if (now.month == DateTime.january) {
+    final previousYear = _RecapPeriod.year(now.year - 1);
+    if (!_insightsForPeriod(sessions, previousYear).isEmpty) {
+      return previousYear;
+    }
+  }
+  if (now.month == DateTime.december && now.day >= 15) {
+    return _RecapPeriod.year(now.year);
+  }
+  if (now.day <= 10) {
+    final previousMonthDate = DateTime(now.year, now.month - 1);
+    final previousMonth = _RecapPeriod.month(previousMonthDate, now);
+    if (!_insightsForPeriod(sessions, previousMonth).isEmpty) {
+      return previousMonth;
+    }
+  }
+  return _RecapPeriod.month(now, now);
+}
 
 List<WellnessBarDatum> _recapBarData(
   WellnessInsights insights,
-  WellnessRange range,
+  _RecapPeriod period,
 ) {
-  final raw = _barData(insights, range);
-  if (raw.length <= 12) return raw;
-  const groupCount = 7;
-  final groupSize = (raw.length / groupCount).ceil();
-  final grouped = <WellnessBarDatum>[];
-  for (var start = 0; start < raw.length; start += groupSize) {
-    final end = (start + groupSize).clamp(0, raw.length);
-    final value = raw
-        .sublist(start, end)
-        .fold<int>(0, (total, item) => total + item.value);
-    grouped.add(
-      WellnessBarDatum(label: '${grouped.length + 1}', value: value),
-    );
+  switch (period.kind) {
+    case _RecapPeriodKind.day:
+      final weekday = period.startLocal.weekday - 1;
+      return List<WellnessBarDatum>.generate(6, (index) {
+        final value = insights.hourOfWeekMs[weekday]
+            .skip(index * 4)
+            .take(4)
+            .fold<int>(0, (total, hour) => total + hour);
+        return WellnessBarDatum(
+          label: DateFormat.j().format(DateTime(2024, 1, 1, index * 4)),
+          value: value,
+        );
+      });
+    case _RecapPeriodKind.week:
+      return List<WellnessBarDatum>.generate(7, (index) {
+        final day = period.startLocal.add(Duration(days: index));
+        return WellnessBarDatum(
+          label: DateFormat.E().format(day).substring(0, 1),
+          value: insights.dailyWatchedMs[day] ?? 0,
+        );
+      });
+    case _RecapPeriodKind.month:
+      final dayCount = DateTime(
+        period.startLocal.year,
+        period.startLocal.month + 1,
+        0,
+      ).day;
+      final weeks = (dayCount / 7).ceil();
+      return List<WellnessBarDatum>.generate(weeks, (week) {
+        var value = 0;
+        for (var offset = 0; offset < 7; offset++) {
+          final day = period.startLocal.add(Duration(days: week * 7 + offset));
+          if (!day.isBefore(period.endLocal)) break;
+          value += insights.dailyWatchedMs[day] ?? 0;
+        }
+        return WellnessBarDatum(label: 'W${week + 1}', value: value);
+      });
+    case _RecapPeriodKind.year:
+      return List<WellnessBarDatum>.generate(12, (index) {
+        final month = index + 1;
+        final value = insights.dailyWatchedMs.entries
+            .where((entry) =>
+                entry.key.year == period.startLocal.year &&
+                entry.key.month == month)
+            .fold<int>(0, (total, entry) => total + entry.value);
+        return WellnessBarDatum(
+          label: DateFormat.MMM()
+              .format(DateTime(period.startLocal.year, month))
+              .substring(0, 1),
+          value: value,
+        );
+      });
   }
-  return grouped;
 }

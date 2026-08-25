@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/widget_container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_margin="5dp"
+    android:background="@drawable/flixquest_widget_background">
+    <ImageView
+        android:id="@+id/widget_background"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitXY"
+        android:src="@drawable/flixquest_widget_background" />
+    <ImageView
+        android:id="@+id/widget_hero"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="centerCrop" />
+    <ImageView
+        android:id="@+id/widget_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#C9000000"
+        android:contentDescription="@null" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:orientation="vertical"
+        android:padding="11dp">
+        <TextView
+            android:id="@+id/widget_eyebrow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="@font/figtree_family"
+            android:maxLines="1"
+            android:textColor="#FFF57C00"
+            android:text="FLIXQUEST"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            tools:text="MOVIE OF THE DAY" />
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:ellipsize="end"
+            android:fontFamily="@font/figtree_family"
+            android:maxLines="2"
+            android:textColor="#FFFFFFFF"
+            android:text="Open FlixQuest"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            tools:text="Movie title" />
+        <TextView
+            android:id="@+id/widget_subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:ellipsize="end"
+            android:fontFamily="@font/figtree_family"
+            android:maxLines="1"
+            android:textColor="#CCFFFFFF"
+            android:text="Your widget is ready"
+            android:textSize="11sp"
+            tools:text="2026" />
+        <ProgressBar
+            android:id="@+id/widget_progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_marginTop="7dp"
+            android:indeterminate="false"
+            android:max="100"
+            android:progress="45"
+            android:progressBackgroundTint="#33FFFFFF"
+            android:progressTint="#FFF57C00"
+            android:visibility="gone" />
+        <TextView
+            android:id="@+id/widget_meta"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:visibility="gone" />
+        <ImageView
+            android:id="@+id/widget_poster"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:contentDescription="@null"
+            android:visibility="gone" />
+        <LinearLayout
+            android:id="@+id/widget_stat_row"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:visibility="gone">
+            <TextView
+                android:id="@+id/widget_stat_a"
+                android:layout_width="1dp"
+                android:layout_height="1dp" />
+            <TextView
+                android:id="@+id/widget_stat_b"
+                android:layout_width="1dp"
+                android:layout_height="1dp" />
+            <TextView
+                android:id="@+id/widget_stat_c"
+                android:layout_width="1dp"
+                android:layout_height="1dp" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

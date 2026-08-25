@@ -1,4 +1,5 @@
 // ignore_for_file: use_build_context_synchronously
+import 'dart:async';
 import 'package:flixquest/functions/function.dart';
 import 'package:flixquest/functions/network.dart';
 import 'package:flixquest/functions/video_utils.dart';
@@ -277,6 +278,7 @@ class _TVVideoLoaderState extends State<TVVideoLoader> {
                 videoFormats: videoFormats,
                 videoHeaders: videoHeaders,
                 videoSizeTokens: videoSizeTokens,
+                initialVideoLinks: tvVideoLinks ?? const [],
                 prefetchedProviderResults: selection?.batchResults ?? const {},
                 subtitleStyle:
                     Provider.of<SettingsProvider>(context).subtitleTextStyle,
@@ -363,6 +365,7 @@ class _TVVideoLoaderState extends State<TVVideoLoader> {
           seasonNumber: widget.metadata.seasonNumber!,
           episodeNumber: widget.metadata.episodeNumber!,
           scraperApiUrl: _scraperApiUrl,
+          full: widget.download,
         );
       },
       onResult: (index, provider, result) {
@@ -442,18 +445,34 @@ class _TVVideoLoaderState extends State<TVVideoLoader> {
     required Map<String, String> videoSizeTokens,
     String? providerName,
   }) async {
-    final estimatedSizes = await StreamSizeEstimator.load(
+    final estimatedSizes = ValueNotifier<Map<String, int?>>({
+      for (final entry in videoSizeTokens.entries)
+        if (_streamSizeCacheByToken.containsKey(entry.value))
+          entry.key: _streamSizeCacheByToken[entry.value],
+    });
+    var sizePickerOpen = true;
+    unawaited(StreamSizeEstimator.load(
       scraperApiUrl: _scraperApiUrl,
       tokens: videoSizeTokens,
       cacheByToken: _streamSizeCacheByToken,
-    );
+      onEstimate: (token, bytes) {
+        if (!sizePickerOpen) return;
+        final next = Map<String, int?>.of(estimatedSizes.value);
+        for (final entry in videoSizeTokens.entries) {
+          if (entry.value == token) next[entry.key] = bytes;
+        }
+        estimatedSizes.value = next;
+      },
+    ));
     if (!mounted) return;
     final quality = await DownloadSelectionSheets.showResolution(
       context,
       resolutions: sources.keys.toList(),
       providerName: providerName,
-      estimatedSizes: estimatedSizes,
+      estimatedSizesListenable: estimatedSizes,
     );
+    sizePickerOpen = false;
+    estimatedSizes.dispose();
     if (!mounted) return;
     if (quality == null) {
       settings.analytics.trackDownload(

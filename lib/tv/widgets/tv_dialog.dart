@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../focus/tv_focusable.dart';
 import '../focus/tv_keymap.dart';
@@ -58,15 +59,59 @@ class TvDialog extends StatefulWidget {
 
 class _TvDialogState extends State<TvDialog> {
   late final FocusScopeNode _focusScopeNode;
+  late List<FocusNode> _actionFocusNodes;
+
+  List<FocusNode> _createActionFocusNodes() => List<FocusNode>.generate(
+        widget.actions.length,
+        (index) => FocusNode(
+          debugLabel: widget.actions[index].label,
+          onKeyEvent: (node, event) => _handleActionKey(index, event),
+        ),
+      );
+
+  void _disposeActionFocusNodes() {
+    for (final node in _actionFocusNodes) {
+      node.dispose();
+    }
+  }
+
+  KeyEventResult _handleActionKey(int index, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final delta = switch (event.logicalKey) {
+      LogicalKeyboardKey.arrowUp || LogicalKeyboardKey.arrowLeft => -1,
+      LogicalKeyboardKey.arrowDown || LogicalKeyboardKey.arrowRight => 1,
+      _ => 0,
+    };
+    if (delta == 0) return KeyEventResult.ignored;
+    final target = index + delta;
+    if (target < 0 || target >= _actionFocusNodes.length) {
+      return KeyEventResult.handled;
+    }
+    _actionFocusNodes[target].requestFocus();
+    return KeyEventResult.handled;
+  }
 
   @override
   void initState() {
     super.initState();
     _focusScopeNode = FocusScopeNode(debugLabel: 'TV dialog');
+    _actionFocusNodes = _createActionFocusNodes();
+  }
+
+  @override
+  void didUpdateWidget(TvDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.actions.length != widget.actions.length) {
+      _disposeActionFocusNodes();
+      _actionFocusNodes = _createActionFocusNodes();
+    }
   }
 
   @override
   void dispose() {
+    _disposeActionFocusNodes();
     _focusScopeNode.dispose();
     super.dispose();
   }
@@ -129,6 +174,7 @@ class _TvDialogState extends State<TvDialog> {
                                 final action = widget.actions[index];
                                 return TvFocusable(
                                   semanticLabel: action.label,
+                                  focusNode: _actionFocusNodes[index],
                                   autofocus: action.autofocus ||
                                       (widget.autofocusFirstAction &&
                                           !hasExplicitAutofocus &&

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../video_providers/names.dart';
@@ -40,29 +41,40 @@ abstract final class DownloadSelectionSheets {
     required List<String> resolutions,
     String? providerName,
     Map<String, int?> estimatedSizes = const {},
+    ValueListenable<Map<String, int?>>? estimatedSizesListenable,
   }) {
     return showModalBottomSheet<String>(
       context: context,
       useSafeArea: true,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (context) => _DownloadChoiceSheet<String>(
-        icon: PhosphorIcons.downloadSimple(),
-        title: 'Choose resolution',
-        subtitle: providerName == null
-            ? 'Select the quality to keep on this device.'
-            : 'Downloading from $providerName',
-        choices: [
-          for (final resolution in resolutions)
-            _DownloadChoice(
-              value: resolution,
-              title: resolution,
-              titleDetail: _sizeDescription(estimatedSizes, resolution),
-              subtitle: _resolutionDescription(resolution),
-              icon: PhosphorIcons.monitorPlay(),
-            ),
-        ],
-      ),
+      builder: (context) {
+        Widget buildSheet(Map<String, int?> sizes) =>
+            _DownloadChoiceSheet<String>(
+              icon: PhosphorIcons.downloadSimple(),
+              title: 'Choose resolution',
+              subtitle: providerName == null
+                  ? 'Select the quality to keep on this device.'
+                  : 'Downloading from $providerName',
+              choices: [
+                for (final resolution in resolutions)
+                  _DownloadChoice(
+                    value: resolution,
+                    title: resolution,
+                    titleDetail: _sizeDescription(sizes, resolution),
+                    subtitle: _resolutionDescription(resolution),
+                    icon: PhosphorIcons.monitorPlay(),
+                  ),
+              ],
+            );
+        final listenable = estimatedSizesListenable;
+        return listenable == null
+            ? buildSheet(estimatedSizes)
+            : ValueListenableBuilder<Map<String, int?>>(
+                valueListenable: listenable,
+                builder: (_, sizes, __) => buildSheet(sizes),
+              );
+      },
     );
   }
 

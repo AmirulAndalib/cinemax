@@ -53,6 +53,33 @@ void main() {
       );
     });
 
+    test('adds repeated playback of the same title to the headline total', () {
+      final first = _session(
+        id: 'rewatch-1',
+        contentId: 'same-title',
+        title: 'Arrival',
+        start: DateTime.utc(2026, 8, 20, 18),
+        end: DateTime.utc(2026, 8, 20, 19),
+      );
+      final second = _session(
+        id: 'rewatch-2',
+        contentId: 'same-title',
+        title: 'Arrival',
+        start: DateTime.utc(2026, 8, 20, 18),
+        end: DateTime.utc(2026, 8, 20, 19),
+      );
+
+      final insights = WellnessInsights.fromSessions(
+        <WellnessViewingSession>[first, second],
+        period: period,
+      );
+
+      expect(
+        insights.totalWatchedMs,
+        const Duration(hours: 2).inMilliseconds,
+      );
+    });
+
     test('tracks unique completions, series, and rewatches separately', () {
       final sessions = <WellnessViewingSession>[
         _session(

@@ -27,6 +27,8 @@ import 'provider/bookmark_provider.dart';
 import 'provider/offline_download_provider.dart';
 import 'provider/wellness_provider.dart';
 import 'services/in_app_messaging_service.dart';
+import 'services/home_widget_navigation_service.dart';
+import 'services/home_widget_service.dart';
 import 'services/app_session_state_store.dart';
 import 'services/app_remote_config.dart';
 import 'screens/common/downloads_screen.dart';
@@ -57,6 +59,7 @@ class _FlixQuestState extends State<FlixQuest>
     with ChangeNotifier, WidgetsBindingObserver {
   final FirebaseRemoteConfig _remoteConfig = FirebaseRemoteConfig.instance;
   StreamSubscription<RemoteConfigUpdate>? _remoteConfigSubscription;
+  Timer? _widgetRefreshDebounce;
 
   Future<void> _initConfig() async {
     try {
@@ -100,13 +103,54 @@ class _FlixQuestState extends State<FlixQuest>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WellnessProvider.instance.addListener(_scheduleLocalWidgetRefresh);
+    widget.bookmarkProvider.addListener(_scheduleLocalWidgetRefresh);
+    widget.settingsProvider.addListener(_scheduleLocalWidgetRefresh);
+    widget.appDependencyProvider.addListener(_scheduleLocalWidgetRefresh);
     _initConfig();
     fileDelete();
     InAppMessagingService.initialize();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      HomeWidgetNavigationService.onAppReady();
+      unawaited(_refreshHomeWidgets());
+    });
+  }
+
+  void _scheduleLocalWidgetRefresh() {
+    _widgetRefreshDebounce?.cancel();
+    _widgetRefreshDebounce = Timer(const Duration(seconds: 3), () {
+      unawaited(HomeWidgetService.instance.refreshLocal(
+        wellness: WellnessProvider.instance,
+        bookmarks: widget.bookmarkProvider,
+        settings: widget.settingsProvider,
+        dependencies: widget.appDependencyProvider,
+      ));
+    });
+  }
+
+  Future<void> _refreshHomeWidgets() => HomeWidgetService.instance.refreshAll(
+        settings: widget.settingsProvider,
+        dependencies: widget.appDependencyProvider,
+        wellness: WellnessProvider.instance,
+        bookmarks: widget.bookmarkProvider,
+      );
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    HomeWidgetNavigationService.onAppReady();
+    unawaited(_refreshHomeWidgets());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    WellnessProvider.instance.removeListener(_scheduleLocalWidgetRefresh);
+    widget.bookmarkProvider.removeListener(_scheduleLocalWidgetRefresh);
+    widget.settingsProvider.removeListener(_scheduleLocalWidgetRefresh);
+    widget.appDependencyProvider.removeListener(_scheduleLocalWidgetRefresh);
+    _widgetRefreshDebounce?.cancel();
     _remoteConfigSubscription?.cancel();
     super.dispose();
   }
@@ -181,6 +225,20 @@ class _FlixQuestState extends State<FlixQuest>
                       (color) => color.index == settingsProvider.appColorIndex,
                       orElse: () => palette.first,
                     );
+                    final appTheme = Styles.themeData(
+                      appThemeMode: settingsProvider.appTheme,
+                      isM3Enabled: settingsProvider.isMaterial3Enabled,
+                      lightDynamicColor: lightDynamic,
+                      darkDynamicColor: darkDynamic,
+                      context: context,
+                      appColor: selectedAppColor,
+                      occasionalTheme:
+                          appDependencyProvider.activeOccasionalTheme,
+                      ambientColor: appDependencyProvider.activeAmbientColor,
+                    );
+                    unawaited(
+                      HomeWidgetService.instance.syncResolvedTheme(appTheme),
+                    );
                     return MaterialApp(
                       restorationScopeId: 'flixquest',
                       navigatorKey: InAppMessagingService.navigatorKey,
@@ -213,17 +271,7 @@ class _FlixQuestState extends State<FlixQuest>
                           ],
                         ),
                       ),
-                      theme: Styles.themeData(
-                          appThemeMode: settingsProvider.appTheme,
-                          isM3Enabled: settingsProvider.isMaterial3Enabled,
-                          lightDynamicColor: lightDynamic,
-                          darkDynamicColor: darkDynamic,
-                          context: context,
-                          appColor: selectedAppColor,
-                          occasionalTheme:
-                              appDependencyProvider.activeOccasionalTheme,
-                          ambientColor:
-                              appDependencyProvider.activeAmbientColor),
+                      theme: appTheme,
                       home: UserState(
                         devicePresentation: widget.devicePresentation,
                       ),

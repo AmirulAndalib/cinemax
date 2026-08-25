@@ -19,6 +19,7 @@ import 'package:flutter/services.dart';
 import 'provider/settings_provider.dart';
 import 'provider/wellness_provider.dart';
 import 'services/bookmark_sync_service.dart';
+import 'services/home_widget_navigation_service.dart';
 import 'singleton/sharedpreferences_singleton.dart';
 import 'tv/platform/device_presentation.dart';
 import 'tv/platform/device_presentation_detector.dart';
@@ -139,6 +140,7 @@ Future<DevicePresentation> appInitialize({
 
 void main() async {
   final devicePresentation = await appInitialize();
+  await HomeWidgetNavigationService.initialize();
   HttpOverrides.global = MyHttpOverrides();
   runApp(EasyLocalization(
     supportedLocales: Translation.all,

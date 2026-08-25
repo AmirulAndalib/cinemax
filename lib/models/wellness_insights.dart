@@ -78,12 +78,11 @@ class WellnessInsights {
 
   final List<WellnessViewingSession> sessions;
 
-  /// Headline personal time. Exact active segments are unioned, so simultaneous
-  /// playback on two devices cannot double the real-world clock.
+  /// Headline viewing time. Rewatches count independently while simultaneous
+  /// playback of different titles is counted once per real-world time slice.
   final int totalWatchedMs;
 
-  /// Sum of every playback stream. This can exceed [totalWatchedMs] when two
-  /// devices play at the same time.
+  /// Sum of every playback stream, including simultaneous playback.
   final int sumPlaybackMs;
   final int movieMs;
   final int episodeMs;
@@ -120,7 +119,7 @@ class WellnessInsights {
         .toList(growable: false)
       ..sort((a, b) => b.startedAtUtc.compareTo(a.startedAtUtc));
 
-    final intervals = <_Interval>[];
+    final intervals = <_PlaybackInterval>[];
     var fallbackWatchedMs = 0;
     var movieMs = 0;
     var episodeMs = 0;
@@ -205,7 +204,7 @@ class WellnessInsights {
             ? period.endUtc
             : segment.endedAtUtc;
         if (!end.isAfter(start)) continue;
-        intervals.add(_Interval(start, end));
+        intervals.add(_PlaybackInterval(start, end, session.uniqueTitleKey));
         _splitSegmentByLocalHour(
           start,
           end,
@@ -216,7 +215,8 @@ class WellnessInsights {
       }
     }
 
-    final unionMs = _unionDurationMs(intervals) + fallbackWatchedMs;
+    final unionMs =
+        _titleAwarePlaybackDurationMs(intervals) + fallbackWatchedMs;
     final sumMs = movieMs + episodeMs + liveMs;
     final activeDays = daily.values.where((value) => value > 0).length;
     final rewatches = completionCounts.values.fold<int>(
@@ -359,6 +359,57 @@ class _Interval {
 
   final DateTime start;
   final DateTime end;
+}
+
+class _PlaybackInterval extends _Interval {
+  const _PlaybackInterval(super.start, super.end, this.titleKey);
+
+  final String titleKey;
+}
+
+/// Counts overlapping rewatches of one title independently while collapsing
+/// overlapping playback of different titles to one real-world time slice.
+int _titleAwarePlaybackDurationMs(List<_PlaybackInterval> intervals) {
+  if (intervals.isEmpty) return 0;
+  final events = <DateTime, List<_PlaybackEvent>>{};
+  for (final interval in intervals) {
+    events.putIfAbsent(interval.start, () => <_PlaybackEvent>[]).add(
+          _PlaybackEvent(interval.titleKey, 1),
+        );
+    events.putIfAbsent(interval.end, () => <_PlaybackEvent>[]).add(
+          _PlaybackEvent(interval.titleKey, -1),
+        );
+  }
+  final points = events.keys.toList()..sort();
+  final active = <String, int>{};
+  var total = 0;
+  for (var index = 0; index < points.length - 1; index++) {
+    final point = points[index];
+    for (final event in events[point]!) {
+      final next = (active[event.titleKey] ?? 0) + event.delta;
+      if (next <= 0) {
+        active.remove(event.titleKey);
+      } else {
+        active[event.titleKey] = next;
+      }
+    }
+    final nextPoint = points[index + 1];
+    if (active.isNotEmpty && nextPoint.isAfter(point)) {
+      final playbackCount = active.values.fold<int>(
+        0,
+        (maximum, count) => count > maximum ? count : maximum,
+      );
+      total += nextPoint.difference(point).inMilliseconds * playbackCount;
+    }
+  }
+  return total;
+}
+
+class _PlaybackEvent {
+  const _PlaybackEvent(this.titleKey, this.delta);
+
+  final String titleKey;
+  final int delta;
 }
 
 (int, int) _groupedViewingSessions(
