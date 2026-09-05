@@ -3,20 +3,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:home_widget/home_widget.dart';
 
-import '../models/movie.dart';
-import '../models/tv.dart';
-import '../screens/common/bookmark_screen.dart';
-import '../screens/movie/movie_detail.dart';
-import '../screens/tv/tv_detail.dart';
-import '../screens/wellness/wellness_screen.dart';
-import 'in_app_messaging_service.dart';
+import 'deep_link_dispatcher.dart';
+import 'deep_link_routes.dart';
+import 'home_widget_deep_link.dart';
 
+/// Opens what a home screen widget was tapped on.
+///
+/// The link only names its target — the record behind it is fetched by the route this pushes, so a
+/// detail page opened from the home screen is the same page as one opened from inside the app rather
+/// than a stub of it. Waiting for a navigator and ignoring a tap reported twice are [DeepLinkDispatcher]'s
+/// job, because they are the same problem for every kind of link.
 class HomeWidgetNavigationService {
   HomeWidgetNavigationService._();
 
   static StreamSubscription<Uri?>? _subscription;
-  static Uri? _pendingUri;
-  static String? _lastHandled;
 
   static Future<void> initialize() async {
     await _subscription?.cancel();
@@ -25,75 +25,40 @@ class HomeWidgetNavigationService {
     if (initialUri != null) _handleUri(initialUri);
   }
 
-  static void onAppReady() {
-    final uri = _pendingUri;
-    if (uri == null) return;
-    _pendingUri = null;
-    _open(uri);
-  }
-
   static void _handleUri(Uri? uri) {
-    if (uri == null || uri.scheme != 'flixquest') return;
-    if (_lastHandled == uri.toString()) return;
-    if (InAppMessagingService.navigatorKey.currentState == null) {
-      _pendingUri = uri;
-      return;
-    }
-    _open(uri);
+    if (uri == null) return;
+    final target = HomeWidgetDeepLink.parse(uri);
+    if (target == null) return;
+    final route = _route(target);
+    if (route == null) return;
+    DeepLinkDispatcher.submit(
+      key: uri.toString(),
+      open: (navigator) => navigator.push(route),
+    );
   }
 
-  static void _open(Uri uri) {
-    final navigator = InAppMessagingService.navigatorKey.currentState;
-    if (navigator == null) {
-      _pendingUri = uri;
-      return;
-    }
-    _lastHandled = uri.toString();
-    switch (uri.host) {
-      case 'movie':
-        final id = int.tryParse(uri.queryParameters['id'] ?? '');
-        if (id == null) return;
-        final movie = Movie(
-          id: id,
-          title: uri.queryParameters['title'] ?? 'Movie',
-          posterPath: uri.queryParameters['poster'],
-          backdropPath: uri.queryParameters['backdrop'],
-          releaseDate: uri.queryParameters['date'],
-        );
-        navigator.push(MaterialPageRoute<void>(
-          builder: (_) => MovieDetailPage(
-            movie: movie,
-            heroId: 'home-widget-movie-$id',
+  /// The home link is the app itself, so it has arrived already and there is nothing to push.
+  static Route<void>? _route(HomeWidgetTarget target) => switch (target) {
+        HomeWidgetMovieTarget() => DeepLinkRoutes.movie(
+            id: target.id,
+            title: target.title,
+            artworkPath: target.backdropPath ?? target.posterPath,
           ),
-        ));
-        return;
-      case 'tv':
-        final id = int.tryParse(uri.queryParameters['id'] ?? '');
-        if (id == null) return;
-        final show = TV(
-          id: id,
-          name: uri.queryParameters['name'] ?? 'TV Show',
-          posterPath: uri.queryParameters['poster'],
-          backdropPath: uri.queryParameters['backdrop'],
-          firstAirDate: uri.queryParameters['date'],
-        );
-        navigator.push(MaterialPageRoute<void>(
-          builder: (_) => TVDetailPage(
-            tvSeries: show,
-            heroId: 'home-widget-tv-$id',
+        HomeWidgetTvTarget() => DeepLinkRoutes.tv(
+            id: target.id,
+            name: target.name,
+            artworkPath: target.backdropPath ?? target.posterPath,
           ),
-        ));
-        return;
-      case 'wellness':
-        navigator.push(MaterialPageRoute<void>(
-          builder: (_) => const WellnessScreen(),
-        ));
-        return;
-      case 'my-list':
-        navigator.push(MaterialPageRoute<void>(
-          builder: (_) => const BookmarkScreen(),
-        ));
-        return;
-    }
-  }
+        HomeWidgetEpisodeTarget() => DeepLinkRoutes.episode(
+            seriesId: target.seriesId,
+            seasonNumber: target.seasonNumber,
+            episodeNumber: target.episodeNumber,
+            seriesName: target.seriesName,
+            posterPath: target.posterPath,
+            artworkPath: target.stillPath ?? target.posterPath,
+          ),
+        HomeWidgetWellnessTarget() => DeepLinkRoutes.wellness(),
+        HomeWidgetMyListTarget() => DeepLinkRoutes.myList(),
+        HomeWidgetHomeTarget() => null,
+      };
 }

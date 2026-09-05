@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../provider/settings_provider.dart';
 import '../../services/auth_navigation_service.dart';
+import '../../services/flixquest_auth_service.dart';
 import '../../ui_components/app_ui_components.dart';
 import '../../widgets/app_logo.dart';
 import '../common/about.dart';
@@ -51,20 +52,37 @@ class _UserInfoState extends State<UserInfo> {
       stream:
           FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
-          return AppEmptyState(
-            title: tr('error_occured'),
-            message: tr('not_available'),
-            icon: PhosphorIcons.userMinus(),
-          );
+        final data = snapshot.data?.data() as Map<String, dynamic>?;
+        if (snapshot.hasData && snapshot.data!.exists && data != null) {
+          return _profile(data);
         }
-        final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
-        return _profile(data);
+        return _profile(_fallbackProfile());
       },
     );
+  }
+
+  Map<String, dynamic> _fallbackProfile() {
+    final user = _auth.currentUser;
+    final email = user?.email ?? '';
+    final name = user?.displayName?.trim();
+    final localPart = email.split('@').first;
+    final username = localPart
+        .replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '')
+        .toLowerCase();
+    return <String, dynamic>{
+      'profileId': 0,
+      'name': (name == null || name.isEmpty)
+          ? (email.isEmpty ? tr('not_available') : localPart)
+          : name,
+      'username': username.isEmpty ? 'username' : username,
+      'email': email,
+      'photoUrl': user?.photoURL ?? '',
+      'verified': true,
+    };
   }
 
   Widget _anonymousProfile() {
@@ -152,6 +170,7 @@ class _UserInfoState extends State<UserInfo> {
     final name = data['name']?.toString() ?? tr('not_available');
     final username = data['username']?.toString() ?? 'username';
     final email = data['email']?.toString() ?? '';
+    final photoUrl = data['photoUrl']?.toString() ?? '';
     return SafeArea(
       bottom: false,
       child: AppResponsiveContent(
@@ -186,17 +205,10 @@ class _UserInfoState extends State<UserInfo> {
                           width: 2),
                     ),
                     child: ClipOval(
-                      child: Image.asset(
-                        'assets/images/profiles/$profileId.png',
-                        width: 112,
-                        height: 112,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Image.asset(
-                          'assets/images/profiles/0.png',
-                          width: 112,
-                          height: 112,
-                          fit: BoxFit.cover,
-                        ),
+                      child: _avatarImage(
+                        profileId: profileId,
+                        photoUrl: photoUrl,
+                        size: 112,
                       ),
                     ),
                   ),
@@ -283,8 +295,37 @@ class _UserInfoState extends State<UserInfo> {
     );
   }
 
+  Widget _avatarImage({
+    required Object profileId,
+    required String photoUrl,
+    required double size,
+  }) {
+    Widget assetAvatar() => Image.asset(
+          'assets/images/profiles/$profileId.png',
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Image.asset(
+            'assets/images/profiles/0.png',
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+          ),
+        );
+    final url = photoUrl.trim();
+    if (url.isEmpty) return assetAvatar();
+    return Image.network(
+      url,
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => assetAvatar(),
+    );
+  }
+
   Future<void> _leaveAnonymousSession() async {
     await _auth.currentUser?.delete();
+    await FlixQuestAuthService.signOutGoogle();
     await _auth.signOut();
     if (!mounted) return;
     await AuthNavigationService.returnToSignedOutRoot(context);
@@ -371,6 +412,7 @@ class _UserInfoState extends State<UserInfo> {
     if (!mounted) return;
     context.read<SettingsProvider>().analytics.trackSignOut();
     context.read<SettingsProvider>().analytics.resetUser();
+    await FlixQuestAuthService.signOutGoogle();
     await _auth.signOut();
     if (!mounted) return;
     await AuthNavigationService.returnToSignedOutRoot(context);

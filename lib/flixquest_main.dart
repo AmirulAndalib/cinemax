@@ -27,7 +27,7 @@ import 'provider/bookmark_provider.dart';
 import 'provider/offline_download_provider.dart';
 import 'provider/wellness_provider.dart';
 import 'services/in_app_messaging_service.dart';
-import 'services/home_widget_navigation_service.dart';
+import 'services/deep_link_dispatcher.dart';
 import 'services/home_widget_service.dart';
 import 'services/recently_watched_sync_service.dart';
 import 'services/app_session_state_store.dart';
@@ -111,7 +111,7 @@ class _FlixQuestState extends State<FlixQuest>
     fileDelete();
     InAppMessagingService.initialize();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      HomeWidgetNavigationService.onAppReady();
+      DeepLinkDispatcher.onAppReady();
       unawaited(_refreshHomeWidgets());
     });
   }
@@ -141,7 +141,7 @@ class _FlixQuestState extends State<FlixQuest>
       unawaited(RecentlyWatchedSyncService.instance.flushPending());
       return;
     }
-    HomeWidgetNavigationService.onAppReady();
+    DeepLinkDispatcher.onAppReady();
     unawaited(_refreshHomeWidgets());
     unawaited(RecentlyWatchedSyncService.instance.autoSyncIfSignedIn());
   }

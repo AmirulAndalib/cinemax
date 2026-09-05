@@ -17,6 +17,7 @@ import '../provider/bookmark_provider.dart';
 import '../provider/settings_provider.dart';
 import '../provider/wellness_provider.dart';
 import 'home_widget_copy.dart';
+import 'home_widget_deep_link.dart';
 
 /// Fills the Android home screen widgets.
 ///
@@ -116,7 +117,7 @@ class HomeWidgetService {
         completedTitles: week.completedTitles,
         topGenre: week.topGenres.firstOrNull?.label,
       ),
-      'deep_link': 'flixquest://wellness',
+      'deep_link': HomeWidgetDeepLink.wellness.toString(),
     });
     await HomeWidget.saveWidgetData<int>(
       'wellness_progress',
@@ -158,7 +159,7 @@ class HomeWidgetService {
               progressEndMs: session.progressEndMs,
               completed: session.completed,
             ),
-      'deep_link': _sessionDeepLink(session),
+      'deep_link': HomeWidgetDeepLink.session(session).toString(),
     });
     await HomeWidget.saveWidgetData<int>(
       'continue_progress',
@@ -213,7 +214,7 @@ class HomeWidgetService {
               isMovie: featureMovie,
               date: feature.date,
             ),
-      'deep_link': 'flixquest://my-list',
+      'deep_link': HomeWidgetDeepLink.myList.toString(),
     });
   }
 
@@ -317,16 +318,11 @@ class HomeWidgetService {
         'meta': HomeWidgetCopy.hook(movie.overview),
         'poster': artwork.first,
         'hero': artwork.last,
-        'deepLink': Uri(
-          scheme: 'flixquest',
-          host: 'movie',
-          queryParameters: <String, String>{
-            'id': movie.id.toString(),
-            'title': movie.title!,
-            if (movie.posterPath != null) 'poster': movie.posterPath!,
-            if (movie.backdropPath != null) 'backdrop': movie.backdropPath!,
-            if (movie.releaseDate != null) 'date': movie.releaseDate!,
-          },
+        'deepLink': HomeWidgetDeepLink.movie(
+          id: movie.id!,
+          title: movie.title,
+          posterPath: movie.posterPath,
+          backdropPath: movie.backdropPath,
         ).toString(),
       });
     }
@@ -362,16 +358,11 @@ class HomeWidgetService {
         'meta': HomeWidgetCopy.hook(show.overview),
         'poster': artwork.first,
         'hero': artwork.last,
-        'deepLink': Uri(
-          scheme: 'flixquest',
-          host: 'tv',
-          queryParameters: <String, String>{
-            'id': show.id.toString(),
-            'name': show.name!,
-            if (show.posterPath != null) 'poster': show.posterPath!,
-            if (show.backdropPath != null) 'backdrop': show.backdropPath!,
-            if (show.firstAirDate != null) 'date': show.firstAirDate!,
-          },
+        'deepLink': HomeWidgetDeepLink.tv(
+          id: show.id!,
+          name: show.name,
+          posterPath: show.posterPath,
+          backdropPath: show.backdropPath,
         ).toString(),
       });
     }
@@ -429,10 +420,14 @@ class HomeWidgetService {
     if (previousSource == remotePath && previousFile != null) {
       return previousFile;
     }
+    // Sessions recorded by the offline player keep the whole image URL they displayed rather than
+    // the path behind it, and that one is fetched as it stands instead of being sized again.
+    final url = remotePath.startsWith('http')
+        ? remotePath
+        : '$TMDB_BASE_IMAGE_URL$size$remotePath';
     try {
-      final response = await http
-          .get(Uri.parse('$TMDB_BASE_IMAGE_URL$size$remotePath'))
-          .timeout(const Duration(seconds: 20));
+      final response =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 20));
       if (response.statusCode < 200 || response.statusCode >= 300) return null;
       final saved =
           await HomeWidget.saveFile(key, response.bodyBytes, extension: 'jpg');
@@ -485,32 +480,4 @@ class HomeWidgetService {
   static DateTime _addedAt(String? value) =>
       (value == null ? null : DateTime.tryParse(value)) ??
       DateTime.fromMillisecondsSinceEpoch(0);
-
-  static String _sessionDeepLink(WellnessViewingSession? session) {
-    if (session == null) return 'flixquest://wellness';
-    if (session.mediaType == WellnessMediaType.movie) {
-      return Uri(
-        scheme: 'flixquest',
-        host: 'movie',
-        queryParameters: <String, String>{
-          'id': session.contentId,
-          'title': session.title,
-          if (session.posterPath != null) 'poster': session.posterPath!,
-          if (session.backdropPath != null) 'backdrop': session.backdropPath!,
-        },
-      ).toString();
-    }
-    final seriesId = session.seriesId;
-    if (seriesId == null) return 'flixquest://wellness';
-    return Uri(
-      scheme: 'flixquest',
-      host: 'tv',
-      queryParameters: <String, String>{
-        'id': seriesId,
-        'name': session.title,
-        if (session.posterPath != null) 'poster': session.posterPath!,
-        if (session.backdropPath != null) 'backdrop': session.backdropPath!,
-      },
-    ).toString();
-  }
 }

@@ -5,6 +5,7 @@ import '../../functions/function.dart';
 import '/screens/user/forgot_password.dart';
 import '/provider/settings_provider.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../../services/globle_method.dart';
@@ -13,6 +14,7 @@ import '../../services/bookmark_sync_service.dart';
 import '../../services/auth_navigation_service.dart';
 import '../../ui_components/app_ui_components.dart';
 import '../../widgets/app_logo.dart';
+import '../../widgets/google_sign_in_button.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -30,6 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final FlixQuestAuthService authService = FlixQuestAuthService();
   GlobalMethods globalMethods = GlobalMethods();
   bool isLoading = false;
+  bool _googleLoading = false;
 
   // @override
   // void dispose() {
@@ -38,7 +41,7 @@ class _LoginScreenState extends State<LoginScreen> {
   // }
 
   Future<void> submitForm() async {
-    if (isLoading) return;
+    if (isLoading || _googleLoading) return;
     final isValid = formKey.currentState!.validate();
     FocusScope.of(context).unfocus();
     if (!isValid) return;
@@ -97,6 +100,70 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
+  }
+
+  Future<void> signInWithGoogle() async {
+    if (isLoading || _googleLoading) return;
+    if (!mounted) return;
+    setState(() => _googleLoading = true);
+    try {
+      final credential = await authService.signInWithGoogle();
+      if (credential == null) return;
+      if (!mounted) return;
+      BookmarkSyncService.instance.autoSyncIfSignedIn();
+      Provider.of<SettingsProvider>(context, listen: false)
+          .analytics
+          .trackLogin('google');
+      await AuthNavigationService.returnToAppRoot(
+        context,
+        authenticatedUserId: credential.user!.uid,
+      );
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      if (error.code == 'account-exists-with-different-credential') {
+        globalMethods.authErrorHandle(tr('google_email_conflict'), context);
+      } else if (error.code == 'invalid-credential') {
+        globalMethods.authErrorHandle(tr('invalid_credential'), context);
+      } else if (error.code == 'user-disabled') {
+        globalMethods.authErrorHandle(tr('banned_user'), context);
+      } else if (error.code == 'network-request-failed') {
+        globalMethods.authErrorHandle(tr('check_connection'), context);
+      } else {
+        globalMethods.authErrorHandle(
+          error.message ?? tr('error_occured'),
+          context,
+        );
+      }
+    } on PlatformException catch (error) {
+      if (!mounted || _isGoogleSignInCancel(error)) return;
+      globalMethods.authErrorHandle(_googlePlatformMessage(error), context);
+    } catch (_) {
+      if (mounted) {
+        globalMethods.authErrorHandle(tr('google_signin_failed'), context);
+      }
+    } finally {
+      if (mounted) setState(() => _googleLoading = false);
+    }
+  }
+
+  bool _isGoogleSignInCancel(PlatformException error) {
+    final code = error.code.toLowerCase();
+    return code.contains('canceled') ||
+        code.contains('cancelled') ||
+        code.contains('interrupted') ||
+        code.contains('user_cancelled');
+  }
+
+  String _googlePlatformMessage(PlatformException error) {
+    final code = error.code.toLowerCase();
+    if (code == 'network_error' ||
+        error.message?.toLowerCase().contains('network') == true) {
+      return tr('check_connection');
+    }
+    final detail = (error.message?.isNotEmpty ?? false)
+        ? error.message!
+        : error.code;
+    return '${tr('google_signin_failed')}\n$detail';
   }
 
   @override
@@ -207,8 +274,33 @@ class _LoginScreenState extends State<LoginScreen> {
                                           )),
                                 ],
                               ),
+                              const SizedBox(height: 22),
+                              Row(
+                                children: [
+                                  const Expanded(child: Divider()),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 14),
+                                    child: Text(
+                                      tr('or'),
+                                      style: TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                  const Expanded(child: Divider()),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              GoogleSignInButton(
+                                loading: _googleLoading,
+                                enabled: !isLoading,
+                                onPressed: signInWithGoogle,
+                              ),
                               const SizedBox(
-                                height: 20,
+                                height: 8,
                               ),
                               TextButton(
                                   style: const ButtonStyle(

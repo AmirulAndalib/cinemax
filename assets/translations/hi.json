@@ -153,6 +153,8 @@
   "anon_login": "अनाम लॉगिन",
   "proceed_anon": "अनाम रूप से आगे बढ़ें",
   "continue_anonymously": "अनाम रूप से जारी रखें",
+  "continue_with_google": "Google से जारी रखें",
+  "or": "या",
   "general": "सामान्य",
   "appearance": "दिखावट",
   "content_preferences": "कंटेंट और डिस्प्ले",
@@ -343,6 +345,7 @@
   "password_change": "पासवर्ड परिवर्तन",
   "enter_new_pass": "नया पासवर्ड दर्ज करें",
   "email_exists": "इस ईमेल के लिए पहले से ही एक खाता मौजूद है।",
+  "google_email_conflict": "इस ईमेल के साथ पहले से ही एक खाता मौजूद है। अपने ईमेल और पासवर्ड से साइन इन करें।",
   "operation_not_allowed": "यह साइनअप विधि इस समय अक्षम है",
   "signup": "साइन अप करें",
   "signup_to_sync": "अपने बुकमार्क किए गए मूवीज़ और टीवी शो को अपने ऑनलाइन खाते के साथ सिंक करने के लिए साइन अप करें।",
@@ -609,6 +612,7 @@
   "subtitles_selected": "{count} चयनित",
   "apply": "लागू करें",
   "refresh": "ताज़ा करें",
+  "subtitle_unavailable_pick_another": "यह सबटाइटल उपलब्ध नहीं है। कृपया कोई दूसरा चुनें",
   "failed_load_subtitles": "उपशीर्षक लोड करने में विफल: {error}",
   "downloading_processing_subtitles": "{count} उपशीर्षक डाउनलोड और प्रोसेस हो रहे हैं...",
   "added_external_subtitles": "{count} बाहरी उपशीर्षक जोड़े गए। चयन करने के लिए उपशीर्षक मेनू देखें।",
@@ -633,5 +637,9 @@
   "failed_upload_subtitle": "उपशीर्षक लोड करने में विफल: {error}",
   "no_file_selected": "कोई फ़ाइल नहीं चुनी गई",
   "finding_best_source": "कृपया प्रतीक्षा करें जब हम सर्वोत्तम स्रोत खोज रहे हैं",
-  "playback_failed": "प्लेबैक शुरू नहीं हो सका"
+  "playback_failed": "प्लेबैक शुरू नहीं हो सका",
+  "google_signin_failed": "Google से साइन इन करना विफल रहा। कृपया पुनः प्रयास करें।",
+  "link_unavailable": "TMDB पर उपलब्ध नहीं",
+  "link_unavailable_message": "TMDB पर इस लिंक का कोई रिकॉर्ड नहीं है। इसे हटाया जा चुका हो सकता है।",
+  "link_unreadable": "आपने जो साझा किया उसमें TMDB या IMDb का कोई लिंक नहीं मिला"
 }

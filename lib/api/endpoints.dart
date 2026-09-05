@@ -323,6 +323,12 @@ class Endpoints {
         '/collection/$id?api_key=$TMDB_API_KEY&language=$l';
   }
 
+  static String getEpisodeDetails(
+      int id, int seasonNumber, int episodeNumber, String l) {
+    return '$TMDB_API_BASE_URL'
+        '/tv/$id/season/$seasonNumber/episode/$episodeNumber?api_key=$TMDB_API_KEY&language=$l';
+  }
+
   static String getEpisodeCredits(
       int id, int seasonNumber, int episodeNumber, String l) {
     return '$TMDB_API_BASE_URL'
@@ -344,5 +350,14 @@ class Endpoints {
 
   static String getIPTVEndpoint(String baseUrl) {
     return '${baseUrl.replaceFirst(RegExp(r'/+$'), '')}/api/v2/dlhd/channels';
+  }
+
+  /// Asks TMDB what it holds under an id from another site, such as an IMDb `tt` or `nm` id.
+  ///
+  /// The reply is grouped by kind of record, because the id itself does not say which kind it is.
+  static String findByExternalId(String externalId, String source, String l) {
+    return '$TMDB_API_BASE_URL'
+        '/find/${Uri.encodeComponent(externalId)}'
+        '?api_key=$TMDB_API_KEY&external_source=$source&language=$l';
   }
 }

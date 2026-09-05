@@ -370,4 +370,15 @@ class BelongsToCollection {
       }
     }
   }
+
+  /// The same collection read from its own record rather than from a film that belongs to one.
+  ///
+  /// `/collection/{id}` answers with these fields at the top level, so a collection reached directly
+  /// — from a link, with no film in hand — can still be shown with its name and its backdrop.
+  BelongsToCollection.fromCollectionJson(Map<String, dynamic> json) {
+    id = json['id'];
+    name = json['name'];
+    posterPath = json['poster_path'];
+    backdropPath = json['backdrop_path'];
+  }
 }

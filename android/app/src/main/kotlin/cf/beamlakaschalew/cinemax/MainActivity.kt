@@ -10,9 +10,11 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import dev.beamlak.flixquest_v2.downloads.StreamDownloadsBridge
 import dev.beamlak.flixquest_v2.downloads.StreamOfflinePlayerFactory
+import dev.beamlak.flixquest_v2.links.MediaLinkBridge
 
 class MainActivity: FlutterActivity() {
     private var downloadsBridge: StreamDownloadsBridge? = null
+    private var linkBridge: MediaLinkBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -39,6 +41,23 @@ class MainActivity: FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // The intent the activity started on is where a tapped or shared address arrives, and it is
+        // already in hand by the time the engine is configured — well before Dart can ask for it.
+        linkBridge = MediaLinkBridge(flutterEngine.dartExecutor.binaryMessenger).also {
+            it.onIntent(intent)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        linkBridge?.onIntent(intent)
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        linkBridge?.dispose()
+        linkBridge = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

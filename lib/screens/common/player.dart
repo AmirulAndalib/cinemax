@@ -14,6 +14,7 @@ import '../../video_providers/provider_loader.dart';
 import '../../video_providers/common.dart';
 import '../../functions/video_utils.dart';
 import '../../functions/player_subtitle_configuration.dart';
+import '../../functions/subtitle_options.dart';
 import '/constants/app_constants.dart';
 import '/widgets/common_widgets.dart';
 import 'package:flutter/material.dart';
@@ -1281,6 +1282,12 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     };
     final resolutionDescriptions = _resolutionDescriptions(sources);
 
+    final appSuppliedSubtitles = <BetterPlayerSubtitlesSource>[
+      ...subtitles,
+      ..._localSubtitles.appliedSubtitles,
+      ..._externalSubtitles.appliedSubtitles,
+    ];
+
     return BetterPlayerDataSource(
       BetterPlayerDataSourceType.network,
       link,
@@ -1323,11 +1330,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
                   'episodeNumber': widget.tvMetadata!.episodeNumber,
               },
             ),
-      subtitles: [
-        ...subtitles,
-        ..._localSubtitles.appliedSubtitles,
-        ..._externalSubtitles.appliedSubtitles,
-      ],
+      subtitles: appSuppliedSubtitles,
       // Streaming already has a bounded in-memory buffer. A persistent media
       // cache can fill the limited internal storage available on Android TVs.
       cacheConfiguration: const BetterPlayerCacheConfiguration(useCache: false),
@@ -3069,6 +3072,8 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       subtitles.insert(0, subtitles.removeAt(offIndex));
     }
 
+    final options = buildSubtitleOptions(subtitles);
+
     showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
@@ -3076,7 +3081,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       isScrollControlled: true,
       builder: (sheetContext) => _SubtitleSwitcherSheet(
         controller: _betterPlayerController,
-        subtitles: subtitles,
+        options: options,
         onClose: () => Navigator.pop(sheetContext),
       ),
     );
@@ -3554,12 +3559,12 @@ class _TvPromptButtonState extends State<_TvPromptButton> {
 class _SubtitleSwitcherSheet extends StatefulWidget {
   const _SubtitleSwitcherSheet({
     required this.controller,
-    required this.subtitles,
+    required this.options,
     required this.onClose,
   });
 
   final BetterPlayerController controller;
-  final List<BetterPlayerSubtitlesSource> subtitles;
+  final List<SubtitleOption> options;
   final VoidCallback onClose;
 
   @override
@@ -3567,34 +3572,51 @@ class _SubtitleSwitcherSheet extends StatefulWidget {
 }
 
 class _SubtitleSwitcherSheetState extends State<_SubtitleSwitcherSheet> {
-  BetterPlayerSubtitlesSource? _loadingSource;
-  final Set<BetterPlayerSubtitlesSource> _failedSources = {};
+  SubtitleOption? _loadingOption;
 
-  Future<void> _selectSubtitle(BetterPlayerSubtitlesSource source) async {
-    if (_loadingSource != null) return;
-    setState(() {
-      _loadingSource = source;
-      _failedSources.remove(source);
-    });
-    try {
-      await widget.controller.setupSubtitleSource(source);
-      if (mounted) widget.onClose();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _failedSources.add(source));
+  /// Applies [option], letting the controller fall through to its
+  /// same-language tracks when it yields nothing: a track can answer with an
+  /// error status, or with something the parser cannot read, and either way the
+  /// user would be left staring at a video with no captions. A first failure is
+  /// not worth a message of its own: the row is marked and, when nothing plays
+  /// at all, subtitles go off with the sheet still open. A tap on a row already
+  /// known to be dead is the one case worth saying out loud, because there is
+  /// nothing left for it to try.
+  Future<void> _selectSubtitle(SubtitleOption option) async {
+    if (_loadingOption != null) return;
+    final controller = widget.controller;
+    if (option.sources.every(controller.subtitlesSourceHasFailed)) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(
-          content: Text(
-            tr(
-              'failed_load_subtitles',
-              namedArgs: {'error': error.toString()},
-            ),
-          ),
-        ),
+        SnackBar(content: Text(tr('subtitle_unavailable_pick_another'))),
       );
-    } finally {
-      if (mounted) setState(() => _loadingSource = null);
+      return;
     }
+
+    setState(() => _loadingOption = option);
+    BetterPlayerSubtitlesSource? applied;
+    try {
+      applied = await controller.selectSubtitlesSource(
+        option.source,
+        fallbacks: option.fallbacks,
+      );
+    } catch (_) {
+      // The walk reports a dead track by leaving it unapplied, so an escaping
+      // error needs nothing here beyond not stranding the row on its spinner.
+      applied = null;
+    }
+    if (!mounted) return;
+    setState(() => _loadingOption = null);
+
+    final played = applied != null &&
+        !controller.subtitlesSourceHasFailed(applied) &&
+        applied.type != BetterPlayerSubtitlesSourceType.none;
+    if (played || option.isOff) {
+      widget.onClose();
+      return;
+    }
+    // Nothing for this language plays. The controller has turned subtitles off
+    // rather than leave an empty caption track on screen, and the sheet stays
+    // open on the marked row so the user can pick something that works.
   }
 
   @override
@@ -3620,23 +3642,31 @@ class _SubtitleSwitcherSheetState extends State<_SubtitleSwitcherSheet> {
         child: ListView.separated(
           controller: scrollController,
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-          itemCount: widget.subtitles.length,
+          itemCount: widget.options.length,
           separatorBuilder: (_, __) => const SizedBox(height: 4),
           itemBuilder: (context, index) {
-            final source = widget.subtitles[index];
-            final isOff = source.type == BetterPlayerSubtitlesSourceType.none;
-            final isSelected = identical(source, selected) ||
-                source == selected ||
-                (isOff &&
-                    selected?.type == BetterPlayerSubtitlesSourceType.none);
-            final isLoading = identical(source, _loadingSource);
-            final hasFailed = _failedSources.contains(source);
+            final option = widget.options[index];
+            final isOff = option.isOff;
+            final isSelected = isOff
+                ? selected == null ||
+                    selected.type == BetterPlayerSubtitlesSourceType.none
+                : identical(option.source, selected);
+            final isLoading = identical(option, _loadingOption);
+            // Only a row with nothing left to try is marked: one whose own
+            // track died but whose fallbacks are untouched can still play.
+            final hasFailed = option.sources.every(
+              widget.controller.subtitlesSourceHasFailed,
+            );
+            final label = isOff
+                ? widget.controller.translations.generalNone
+                : option.name ?? widget.controller.translations.generalDefault;
             return PlayerChoiceCard(
-              title: isOff
-                  ? widget.controller.translations.generalNone
-                  : source.name ??
-                      widget.controller.translations.generalDefault,
-              subtitle: isOff ? null : tr('subtitle'),
+              title: option.number == null ? label : '$label #${option.number}',
+              subtitle: isOff
+                  ? null
+                  : option.provider.isEmpty
+                      ? tr('subtitle')
+                      : option.provider,
               selected: isSelected,
               thumbnail: PlayerThumbnail(
                 width: 48,
@@ -3660,7 +3690,7 @@ class _SubtitleSwitcherSheetState extends State<_SubtitleSwitcherSheet> {
                   : hasFailed
                       ? Semantics(
                           liveRegion: true,
-                          label: tr('failed_load_subtitles'),
+                          label: tr('subtitle_unavailable_pick_another'),
                           child: Icon(
                             PhosphorIcons.xCircle(PhosphorIconsStyle.fill),
                             key: const Key('subtitle_selection_failed'),
@@ -3669,8 +3699,9 @@ class _SubtitleSwitcherSheetState extends State<_SubtitleSwitcherSheet> {
                           ),
                         )
                       : null,
-              onTap:
-                  _loadingSource == null ? () => _selectSubtitle(source) : null,
+              onTap: _loadingOption == null
+                  ? () => _selectSubtitle(option)
+                  : null,
             );
           },
         ),

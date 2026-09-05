@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../services/auth_navigation_service.dart';
+import '../../services/flixquest_auth_service.dart';
 import '../app/tv_design.dart';
 import '../focus/tv_focusable.dart';
 import '../widgets/tv_dialog.dart';
@@ -45,6 +46,7 @@ class TvProfileScreen extends StatelessWidget {
               ? user.email ?? 'Signed in'
               : '@$username',
           profileId: profileId,
+          photoUrl: data?['photoUrl']?.toString(),
           loading: snapshot.connectionState != ConnectionState.done,
           onSignOut: () => _confirmSignOut(context),
         );
@@ -70,6 +72,7 @@ class TvProfileScreen extends StatelessWidget {
           isPrimary: true,
           onPressed: () async {
             Navigator.of(context).pop();
+            await FlixQuestAuthService.signOutGoogle();
             await FirebaseAuth.instance.signOut();
             if (context.mounted) {
               await AuthNavigationService.returnToSignedOutRoot(context);
@@ -88,6 +91,7 @@ class _ProfileLayout extends StatelessWidget {
     required this.subtitle,
     required this.profileId,
     required this.onSignOut,
+    this.photoUrl,
     this.loading = false,
   });
 
@@ -95,8 +99,45 @@ class _ProfileLayout extends StatelessWidget {
   final String name;
   final String subtitle;
   final int profileId;
+  final String? photoUrl;
   final VoidCallback onSignOut;
   final bool loading;
+
+  Widget _profileImage({
+    required ColorScheme colors,
+    required double size,
+  }) {
+    final fallback = Container(
+      width: size,
+      height: size,
+      color: colors.surfaceContainerHighest,
+      child: Icon(
+        PhosphorIcons.user(),
+        color: colors.onSurfaceVariant,
+        size: 54,
+      ),
+    );
+    final url = photoUrl?.trim() ?? '';
+    final image = url.isEmpty
+        ? Image.asset(
+            'assets/images/profiles/${profileId.clamp(0, 149)}.png',
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => fallback,
+          )
+        : Image.network(
+            url,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => fallback,
+          );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: image,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -136,24 +177,9 @@ class _ProfileLayout extends StatelessWidget {
                   padding: EdgeInsets.all(metrics.compact ? 26 : 38),
                   child: Row(
                     children: <Widget>[
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(22),
-                        child: Image.asset(
-                          'assets/images/profiles/${profileId.clamp(0, 149)}.png',
-                          width: metrics.compact ? 110 : 146,
-                          height: metrics.compact ? 110 : 146,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: metrics.compact ? 110 : 146,
-                            height: metrics.compact ? 110 : 146,
-                            color: colors.surfaceContainerHighest,
-                            child: Icon(
-                              PhosphorIcons.user(),
-                              color: colors.onSurfaceVariant,
-                              size: 54,
-                            ),
-                          ),
-                        ),
+                      _profileImage(
+                        colors: colors,
+                        size: metrics.compact ? 110 : 146,
                       ),
                       const SizedBox(width: 30),
                       Expanded(

@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
@@ -22,6 +23,36 @@ class TvLandingScreen extends StatefulWidget {
 class _TvLandingScreenState extends State<TvLandingScreen> {
   final _authService = FlixQuestAuthService();
   bool _isEnteringAsGuest = false;
+  bool _isGoogleSigningIn = false;
+
+  Future<void> _continueWithGoogle() async {
+    if (_isEnteringAsGuest || _isGoogleSigningIn) return;
+
+    setState(() => _isGoogleSigningIn = true);
+    try {
+      await _authService.signInWithGoogle();
+      if (!mounted) return;
+      Provider.of<SettingsProvider>(context, listen: false)
+          .analytics
+          .trackLogin('google');
+      // UserState owns the destination. Its auth stream replaces this landing
+      // screen with TvHomeShell when the Google session becomes active.
+    } on FirebaseAuthException catch (error) {
+      if (mounted) {
+        _showError(_googleAuthMessage(error));
+      }
+    } on PlatformException catch (error) {
+      if (mounted && !_isGoogleSignInCancel(error)) {
+        _showError(_googlePlatformMessage(error));
+      }
+    } catch (_) {
+      if (mounted) {
+        _showError('Unable to sign in with Google. Please try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _isGoogleSigningIn = false);
+    }
+  }
 
   Future<void> _continueAsGuest() async {
     if (_isEnteringAsGuest) return;
@@ -58,6 +89,40 @@ class _TvLandingScreenState extends State<TvLandingScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message, maxLines: 2)),
     );
+  }
+
+  String _googleAuthMessage(FirebaseAuthException error) {
+    return switch (error.code) {
+      'account-exists-with-different-credential' =>
+        'That email is already used by an email-and-password account. '
+            'Sign in with your email and password instead.',
+      'network-request-failed' => 'Check your internet connection and retry.',
+      'operation-not-allowed' => 'Google sign-in is currently unavailable.',
+      'invalid-credential' => 'Google sign-in failed. Please try again.',
+      _ => error.message ?? 'Unable to sign in with Google.',
+    };
+  }
+
+  bool _isGoogleSignInCancel(PlatformException error) {
+    final code = error.code.toLowerCase();
+    return code.contains('canceled') ||
+        code.contains('cancelled') ||
+        code.contains('interrupted') ||
+        code.contains('user_cancelled');
+  }
+
+  String _googlePlatformMessage(PlatformException error) {
+    final code = error.code.toLowerCase();
+    if (code == 'network_error' ||
+        error.message?.toLowerCase().contains('network') == true) {
+      return 'Check your internet connection and retry.';
+    }
+    final detail = (error.message?.isNotEmpty ?? false)
+        ? error.message!
+        : error.code;
+    return 'Google sign-in is not available on this device '
+        '($detail). Make sure Google Play services is installed and a '
+        'Google account is set up, or sign in with your email and password.';
   }
 
   String _authMessage(FirebaseAuthException error) {
@@ -153,6 +218,8 @@ class _TvLandingScreenState extends State<TvLandingScreen> {
                                     icon: PhosphorIcons.signIn(),
                                     autofocus: true,
                                     primary: true,
+                                    enabled: !_isGoogleSigningIn &&
+                                        !_isEnteringAsGuest,
                                     onActivate: () =>
                                         _open(const TvAuthScreen.signIn()),
                                   ),
@@ -160,9 +227,21 @@ class _TvLandingScreenState extends State<TvLandingScreen> {
                                   _TvLandingAction(
                                     label: 'Create account',
                                     icon: PhosphorIcons.userPlus(),
+                                    enabled: !_isGoogleSigningIn &&
+                                        !_isEnteringAsGuest,
                                     onActivate: () => _open(
                                       const TvAuthScreen.createAccount(),
                                     ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _TvLandingAction(
+                                    label: _isGoogleSigningIn
+                                        ? 'Signing in with Google…'
+                                        : 'Continue with Google',
+                                    icon: PhosphorIcons.googleLogo(),
+                                    enabled: !_isGoogleSigningIn &&
+                                        !_isEnteringAsGuest,
+                                    onActivate: _continueWithGoogle,
                                   ),
                                   const SizedBox(height: 12),
                                   _TvLandingAction(
@@ -170,7 +249,8 @@ class _TvLandingScreenState extends State<TvLandingScreen> {
                                         ? 'Starting guest session…'
                                         : 'Continue as guest',
                                     icon: PhosphorIcons.userCircle(),
-                                    enabled: !_isEnteringAsGuest,
+                                    enabled: !_isEnteringAsGuest &&
+                                        !_isGoogleSigningIn,
                                     onActivate: _continueAsGuest,
                                   ),
                                 ],

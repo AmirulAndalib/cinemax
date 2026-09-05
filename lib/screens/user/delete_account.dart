@@ -4,6 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../constants/app_constants.dart';
 import '../../services/globle_method.dart';
 import '../../services/auth_navigation_service.dart';
+import '../../services/flixquest_auth_service.dart';
 import '../../services/in_app_messaging_service.dart';
 import '../../services/recently_watched_sync_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -83,6 +84,7 @@ class DeleteAccountScreenState extends State<DeleteAccountScreen> {
                   .delete()
                   .then((value) async {
                 await user!.delete().then((value) async {
+                  await FlixQuestAuthService.signOutGoogle();
                   if (!context.mounted) {
                     return;
                   }

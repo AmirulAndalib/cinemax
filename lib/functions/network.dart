@@ -12,6 +12,7 @@ import '/models/watch_providers.dart';
 import 'package:http/http.dart' as http;
 import '/models/credits.dart';
 import '/models/genres.dart';
+import '/models/external_id_lookup.dart';
 import '/models/movie.dart';
 
 Future<List<Movie>> fetchMovies(
@@ -451,6 +452,72 @@ Future<TV> getTV(String api, bool isProxyEnabled, String proxyUrl) async {
     client.close();
   }
   return tv;
+}
+
+/// One episode, addressed by its series and its two numbers.
+Future<EpisodeList> getEpisode(
+    String api, bool isProxyEnabled, String proxyUrl) async {
+  EpisodeList episode;
+  try {
+    if (isProxyEnabled && proxyUrl.isNotEmpty) {
+      api = '$proxyUrl?destination=$api';
+    }
+    var res = await retryOptions.retry(
+      () => http.get(Uri.parse(api)).timeout(timeOut),
+      retryIf: (e) => e is SocketException || e is TimeoutException,
+    );
+    var decodeRes = jsonDecode(res.body);
+    episode = EpisodeList.fromJson(decodeRes);
+  } finally {
+    client.close();
+  }
+  return episode;
+}
+
+/// What TMDB holds under an id belonging to another site, such as an IMDb id.
+Future<ExternalIdLookup> findByExternalId(
+    String api, bool isProxyEnabled, String proxyUrl) async {
+  ExternalIdLookup lookup;
+  try {
+    if (isProxyEnabled && proxyUrl.isNotEmpty) {
+      api = '$proxyUrl?destination=$api';
+    }
+    var res = await retryOptions.retry(
+      () => http.get(Uri.parse(api)).timeout(timeOut),
+      retryIf: (e) => e is SocketException || e is TimeoutException,
+    );
+    var decodeRes = jsonDecode(res.body);
+    if (decodeRes is! Map<String, dynamic>) {
+      throw const FormatException('Expected a JSON object from the find API');
+    }
+    lookup = ExternalIdLookup.fromJson(decodeRes);
+  } finally {
+    client.close();
+  }
+  return lookup;
+}
+
+/// A collection's own name and artwork, for one reached without a film in hand.
+Future<BelongsToCollection> fetchCollectionSummary(
+    String api, bool isProxyEnabled, String proxyUrl) async {
+  BelongsToCollection collection;
+  try {
+    if (isProxyEnabled && proxyUrl.isNotEmpty) {
+      api = '$proxyUrl?destination=$api';
+    }
+    var res = await retryOptions.retry(
+      () => http.get(Uri.parse(api)).timeout(timeOut),
+      retryIf: (e) => e is SocketException || e is TimeoutException,
+    );
+    var decodeRes = jsonDecode(res.body);
+    if (decodeRes is! Map<String, dynamic>) {
+      throw const FormatException('Expected a JSON object from collection API');
+    }
+    collection = BelongsToCollection.fromCollectionJson(decodeRes);
+  } finally {
+    client.close();
+  }
+  return collection;
 }
 
 Future<String> getVttFileAsString(String url) async {

@@ -35,6 +35,8 @@ class _ProfileEditState extends State<ProfileEdit> {
   int? profileId;
   bool? userAnonymous;
   String? username;
+  String? photoUrl;
+  bool _avatarChanged = false;
   String? month;
   int? year;
   int? selectedProfile;
@@ -71,6 +73,7 @@ class _ProfileEditState extends State<ProfileEdit> {
         isVerified = userDoc!.get('verified');
         profileId = userDoc!.get('profileId');
         username = userDoc!.get('username');
+        photoUrl = userDoc!.get('photoUrl')?.toString();
         createdAt = userDoc!.get('createdAt');
         userEmail = userDoc!.get('email');
         userId = userDoc!.get('id');
@@ -127,6 +130,7 @@ class _ProfileEditState extends State<ProfileEdit> {
             'joinedAt': joinedAt,
             'name': _fullName,
             'profileId': profileId,
+            'photoUrl': _avatarChanged ? '' : (photoUrl ?? ''),
             'username': username!.trim().toLowerCase(),
             'verified': isVerified
           }).then((value) {
@@ -177,6 +181,7 @@ class _ProfileEditState extends State<ProfileEdit> {
             'joinedAt': joinedAt,
             'name': _fullName,
             'profileId': profileId,
+            'photoUrl': _avatarChanged ? '' : (photoUrl ?? ''),
             'username': _userName.trim().toLowerCase(),
             'verified': isVerified
           }).then((value) {
@@ -268,6 +273,7 @@ class _ProfileEditState extends State<ProfileEdit> {
                                         onTap: () => setState(() {
                                           profileId = profile.index;
                                           selectedProfile = profile.index;
+                                          _avatarChanged = true;
                                         }),
                                         child: AnimatedContainer(
                                           duration: const Duration(

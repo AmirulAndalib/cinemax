@@ -37,10 +37,14 @@ class WellnessSyncService {
     status.value = WellnessSyncStatus.syncing;
     final uid = currentUser!.uid;
     final ownerId = 'user:$uid';
+    debugPrint('[WellnessSync] sync start uid=$uid');
     try {
       final collection =
           _firestore.collection('wellness-v1').doc(uid).collection('sessions');
       final cloudSnapshot = await collection.get();
+      debugPrint(
+        '[WellnessSync] read cloud sessions: ${cloudSnapshot.docs.length}',
+      );
       final localSessions = await _database.sessionsForOwner(
         ownerId,
         includeDeleted: true,
@@ -63,9 +67,11 @@ class WellnessSyncService {
       }
       if (pulled.isNotEmpty) {
         await _database.upsertSessions(pulled, ownerId: ownerId);
+        debugPrint('[WellnessSync] applied ${pulled.length} pulled sessions');
       }
 
       final pending = await _database.pendingSessions(ownerId);
+      debugPrint('[WellnessSync] uploading ${pending.length} pending sessions');
       for (var offset = 0; offset < pending.length; offset += 450) {
         final chunk = pending.skip(offset).take(450).toList(growable: false);
         final batch = _firestore.batch();
@@ -82,14 +88,15 @@ class WellnessSyncService {
           chunk.map((session) => session.id),
         );
       }
+      debugPrint('[WellnessSync] sessions uploaded to cloud');
       await _syncDailySummaries(uid, ownerId);
       lastSynced.value = DateTime.now();
       status.value = WellnessSyncStatus.success;
+      debugPrint('[WellnessSync] sync success');
       return true;
     } catch (error, stackTrace) {
-      if (kDebugMode) {
-        debugPrint('Viewing Insights sync failed: $error\n$stackTrace');
-      }
+      debugPrint('[WellnessSync] sync FAILED: $error');
+      debugPrintStack(stackTrace: stackTrace, label: '[WellnessSync]');
       status.value = WellnessSyncStatus.error;
       return false;
     } finally {

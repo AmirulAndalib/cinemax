@@ -12,7 +12,12 @@
           "package_name": "dev.beamlak.flixquest_v2"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "296748538853-qt22k21qcs39v56pahr2cdfat4s0i7mr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCbzOsLWvrrldV1TfARQn5ZJNP574sdMbU"
@@ -20,7 +25,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "296748538853-qt22k21qcs39v56pahr2cdfat4s0i7mr.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

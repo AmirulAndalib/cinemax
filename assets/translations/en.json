@@ -153,6 +153,8 @@
   "anon_login": "Anonymous Login",
   "proceed_anon": "Proceed anonymously",
   "continue_anonymously": "Continue anonymously",
+  "continue_with_google": "Continue with Google",
+  "or": "or",
   "general": "General",
   "appearance": "Appearance",
   "content_preferences": "Content & display",
@@ -343,6 +345,7 @@
   "password_change": "Password change",
   "enter_new_pass": "Enter new password",
   "email_exists": "An account already exists for this email.",
+  "google_email_conflict": "An account with this email already exists. Sign in with your email and password instead.",
   "operation_not_allowed": "This signup method is disabled this time",
   "signup": "Signup",
   "signup_to_sync": "Signup to snyc your bookmarked Movies and TV shows with your online account.",
@@ -609,6 +612,7 @@
   "subtitles_selected": "{count} selected",
   "apply": "Apply",
   "refresh": "Refresh",
+  "subtitle_unavailable_pick_another": "This subtitle isn't available. Please pick another one",
   "failed_load_subtitles": "Failed to load subtitles: {error}",
   "downloading_processing_subtitles": "Downloading and processing {count} subtitle(s)...",
   "added_external_subtitles": "Added {count} external subtitle(s). Check subtitles menu to select.",
@@ -633,5 +637,9 @@
   "failed_upload_subtitle": "Failed to load subtitle: {error}",
   "no_file_selected": "No file selected",
   "finding_best_source": "Please grab a popcorn while while we find the best source",
-  "playback_failed": "Couldn't start playback"
+  "playback_failed": "Couldn't start playback",
+  "google_signin_failed": "Google sign-in failed. Please try again.",
+  "link_unavailable": "Not on TMDB",
+  "link_unavailable_message": "TMDB has no record of this link. It may have been removed.",
+  "link_unreadable": "No TMDB or IMDb link found in what you shared"
 }

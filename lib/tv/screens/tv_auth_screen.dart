@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
-
 import '../../provider/settings_provider.dart';
 import '../../services/flixquest_auth_service.dart';
 import '../../services/auth_navigation_service.dart';
@@ -125,6 +124,77 @@ class _TvAuthScreenState extends State<TvAuthScreen> {
     };
   }
 
+  String _googleAuthMessage(FirebaseAuthException error) {
+    return switch (error.code) {
+      'account-exists-with-different-credential' =>
+        'That email is already used by an email-and-password account. '
+            'Sign in with your email and password instead.',
+      'network-request-failed' => 'Check your internet connection and retry.',
+      'operation-not-allowed' => 'Google sign-in is currently unavailable.',
+      'invalid-credential' => 'Google sign-in failed. Please try again.',
+      _ => error.message ?? 'Unable to sign in with Google.',
+    };
+  }
+
+  bool _isGoogleSignInCancel(PlatformException error) {
+    final code = error.code.toLowerCase();
+    return code.contains('canceled') ||
+        code.contains('cancelled') ||
+        code.contains('interrupted') ||
+        code.contains('user_cancelled');
+  }
+
+  String _googlePlatformMessage(PlatformException error) {
+    final code = error.code.toLowerCase();
+    if (code == 'network_error' ||
+        error.message?.toLowerCase().contains('network') == true) {
+      return 'Check your internet connection and retry.';
+    }
+    final detail = (error.message?.isNotEmpty ?? false)
+        ? error.message!
+        : error.code;
+    return 'Google sign-in is not available on this device '
+        '($detail). Make sure Google Play services is installed and a '
+        'Google account is set up, or sign in with your email and password.';
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_submitting) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      final credential = await _authService.signInWithGoogle();
+      if (credential == null) return;
+      if (mounted) {
+        BookmarkSyncService.instance.autoSyncIfSignedIn();
+        context.read<SettingsProvider>().analytics.trackLogin('google');
+      }
+      if (mounted) {
+        await AuthNavigationService.returnToAppRoot(
+          context,
+          authenticatedUserId: credential.user!.uid,
+        );
+      }
+    } on FirebaseAuthException catch (error) {
+      if (mounted) setState(() => _error = _googleAuthMessage(error));
+    } on PlatformException catch (error) {
+      if (mounted && !_isGoogleSignInCancel(error)) {
+        setState(() => _error = _googlePlatformMessage(error));
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'Unable to sign in with Google. Please try again.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -189,6 +259,81 @@ class _TvAuthScreenState extends State<TvAuthScreen> {
                                     ],
                                   ),
                                   SizedBox(height: compact ? 18 : 25),
+                                  if (_isSignIn) ...<Widget>[
+                                    TvFocusable(
+                                      semanticLabel: 'Continue with Google',
+                                      enabled: !_submitting,
+                                      onActivate: _signInWithGoogle,
+                                      focusScale: 1.02,
+                                      borderRadius: BorderRadius.circular(11),
+                                      child: Container(
+                                        height: 56,
+                                        padding:
+                                            const EdgeInsets.symmetric(
+                                          horizontal: 18,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: colors.surfaceContainerHighest,
+                                          borderRadius:
+                                              BorderRadius.circular(11),
+                                        ),
+                                        child: Row(
+                                          children: <Widget>[
+                                            Icon(
+                                              PhosphorIcons.googleLogo(),
+                                              color: colors.onSurface,
+                                              size: 24,
+                                            ),
+                                            const SizedBox(width: 13),
+                                            Expanded(
+                                              child: Text(
+                                                'Continue with Google',
+                                                style: TextStyle(
+                                                  color: colors.onSurface,
+                                                  fontFamily: 'FigtreeSB',
+                                                  fontSize: 18,
+                                                ),
+                                              ),
+                                            ),
+                                            Icon(
+                                              PhosphorIcons.caretRight(),
+                                              color: colors.onSurfaceVariant,
+                                              size: 21,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    SizedBox(height: compact ? 20 : 26),
+                                    Row(
+                                      children: <Widget>[
+                                        Expanded(
+                                          child: Divider(
+                                            color: colors.outlineVariant,
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                          ),
+                                          child: Text(
+                                            'or',
+                                            style: TextStyle(
+                                              color: colors.onSurfaceVariant,
+                                              fontFamily: 'FigtreeSB',
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Divider(
+                                            color: colors.outlineVariant,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    SizedBox(height: compact ? 18 : 24),
+                                  ],
                                   if (!_isSignIn) ...<Widget>[
                                     _TvAuthField(
                                       controller: _nameController,

@@ -153,6 +153,8 @@
   "anon_login": "تسجيل الدخول بشكل مجهول",
   "proceed_anon": "المتابعة بشكل مجهول",
   "continue_anonymously": "المتابعة بشكل مجهول",
+  "continue_with_google": "المتابعة باستخدام Google",
+  "or": "أو",
   "general": "عام",
   "appearance": "المظهر",
   "content_preferences": "المحتوى والعرض",
@@ -343,6 +345,7 @@
   "password_change": "تغيير كلمة المرور",
   "enter_new_pass": "أدخل كلمة المرور الجديدة",
   "email_exists": "يوجد حساب بالفعل لهذا البريد الإلكتروني.",
+  "google_email_conflict": "يوجد حساب بالفعل لهذا البريد الإلكتروني. سجّل الدخول باستخدام بريدك الإلكتروني وكلمة المرور.",
   "operation_not_allowed": "طريقة التسجيل هذه معطلة هذه المرة",
   "signup": "تسجيل",
   "signup_to_sync": "قم بالتسجيل لمزامنة الأفلام والبرامج التلفزيونية المضافة إلى المفضلة مع حسابك عبر الإنترنت.",
@@ -609,6 +612,7 @@
   "subtitles_selected": "{count} محددة",
   "apply": "تطبيق",
   "refresh": "تحديث",
+  "subtitle_unavailable_pick_another": "هذه الترجمة غير متاحة. يرجى اختيار ترجمة أخرى",
   "failed_load_subtitles": "فشل تحميل الترجمات: {error}",
   "downloading_processing_subtitles": "جاري تنزيل ومعالجة {count} ترجمة...",
   "added_external_subtitles": "تمت إضافة {count} ترجمة خارجية. تحقق من قائمة الترجمات للاختيار.",
@@ -633,5 +637,9 @@
   "failed_upload_subtitle": "فشل في تحميل الترجمة: {error}",
   "no_file_selected": "لم يتم اختيار ملف",
   "finding_best_source": "يرجى الانتظار بينما نبحث عن أفضل مصدر",
-  "playback_failed": "تعذر بدء التشغيل"
+  "playback_failed": "تعذر بدء التشغيل",
+  "google_signin_failed": "تعذّر تسجيل الدخول باستخدام Google. يرجى المحاولة مرة أخرى.",
+  "link_unavailable": "غير موجود على TMDB",
+  "link_unavailable_message": "لا يوجد سجل لهذا الرابط على TMDB. ربما تم حذفه.",
+  "link_unreadable": "لم يتم العثور على رابط TMDB أو IMDb فيما شاركته"
 }

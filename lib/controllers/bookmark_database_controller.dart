@@ -62,10 +62,13 @@ class MovieDatabaseController {
   }
 
   // this method will update a movie
+  //
+  // The stored row is refreshed from whatever the app is showing, but never restamped: date_added is
+  // what orders this list, and opening a bookmarked title is not saving it again.
   Future<int> updateMovie(Movie movie, int id) async {
     var db = await database;
-    var result =
-        await db.update(tableName, movie.toMap(), where: '$colId = $id');
+    var result = await db.update(tableName, movie.toMap()..remove(colDateAdded),
+        where: '$colId = $id');
     return result;
   }
 
@@ -166,9 +169,12 @@ class TVDatabaseController {
   }
 
   // this method will update a tv
+  //
+  // As with movies, refreshing a saved show's facts must not move it to the top of the list.
   Future<int> updateTV(TV tv, int id) async {
     var db = await database;
-    var result = await db.update(tableName, tv.toMap(), where: '$colId = $id');
+    var result = await db.update(tableName, tv.toMap()..remove(colDateAdded),
+        where: '$colId = $id');
     return result;
   }
 

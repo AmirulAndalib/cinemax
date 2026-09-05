@@ -1,11 +1,14 @@
 import 'package:easy_localization/easy_localization.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../functions/function.dart';
 import '../../provider/settings_provider.dart';
 import '../../services/globle_method.dart';
 import '../../services/flixquest_auth_service.dart';
+import '../../widgets/google_sign_in_button.dart';
 import '../user/login_screen.dart';
 import '../user/signup_screen.dart';
 import '../../widgets/app_logo.dart';
@@ -20,6 +23,7 @@ class LandingScreen extends StatefulWidget {
 class _LandingScreenState extends State<LandingScreen> {
   final _authService = FlixQuestAuthService();
   bool _loadingAnonymous = false;
+  bool _loadingGoogle = false;
 
   @override
   Widget build(BuildContext context) {
@@ -93,17 +97,27 @@ class _LandingScreenState extends State<LandingScreen> {
             ),
             const SizedBox(height: 24),
             FilledButton(
-              onPressed: () => _push(const LoginScreen()),
+              onPressed: _loadingGoogle || _loadingAnonymous
+                  ? null
+                  : () => _push(const LoginScreen()),
               child: Text(tr('log_in')),
             ),
             const SizedBox(height: 12),
             OutlinedButton(
-              onPressed: () => _push(const SignupScreen()),
+              onPressed: _loadingGoogle || _loadingAnonymous
+                  ? null
+                  : () => _push(const SignupScreen()),
               child: Text(tr('sign_up')),
             ),
             const SizedBox(height: 12),
+            GoogleSignInButton(
+              loading: _loadingGoogle,
+              enabled: !_loadingAnonymous,
+              onPressed: () => _continueWithGoogle(settings),
+            ),
+            const SizedBox(height: 12),
             TextButton(
-              onPressed: _loadingAnonymous
+              onPressed: _loadingAnonymous || _loadingGoogle
                   ? null
                   : () => _continueAnonymously(settings),
               child: _loadingAnonymous
@@ -119,6 +133,7 @@ class _LandingScreenState extends State<LandingScreen> {
   }
 
   Future<void> _continueAnonymously(SettingsProvider settings) async {
+    if (_loadingGoogle) return;
     setState(() => _loadingAnonymous = true);
     try {
       if (!await checkConnection()) {
@@ -133,6 +148,60 @@ class _LandingScreenState extends State<LandingScreen> {
     } finally {
       if (mounted) setState(() => _loadingAnonymous = false);
     }
+  }
+
+  Future<void> _continueWithGoogle(SettingsProvider settings) async {
+    if (_loadingAnonymous) return;
+    setState(() => _loadingGoogle = true);
+    try {
+      final credential = await _authService.signInWithGoogle();
+      if (credential == null) return;
+      settings.analytics.trackLogin('google');
+      // UserState's auth stream swaps this landing screen for the app shell.
+    } on FirebaseAuthException catch (error) {
+      if (mounted) _showError(_googleAuthMessage(error));
+    } on PlatformException catch (error) {
+      if (mounted && !_isGoogleSignInCancel(error)) {
+        _showError(_googlePlatformMessage(error));
+      }
+    } catch (_) {
+      if (mounted) _showError(tr('google_signin_failed'));
+    } finally {
+      if (mounted) setState(() => _loadingGoogle = false);
+    }
+  }
+
+  String _googleAuthMessage(FirebaseAuthException error) {
+    return switch (error.code) {
+      'account-exists-with-different-credential' =>
+        tr('google_email_conflict'),
+      'network-request-failed' => tr('check_connection'),
+      'invalid-credential' ||
+      'invalid-email' =>
+        tr('invalid_credential'),
+      'user-disabled' => tr('banned_user'),
+      _ => error.message ?? tr('error_occured'),
+    };
+  }
+
+  bool _isGoogleSignInCancel(PlatformException error) {
+    final code = error.code.toLowerCase();
+    return code.contains('canceled') ||
+        code.contains('cancelled') ||
+        code.contains('interrupted') ||
+        code.contains('user_cancelled');
+  }
+
+  String _googlePlatformMessage(PlatformException error) {
+    final code = error.code.toLowerCase();
+    if (code == 'network_error' ||
+        error.message?.toLowerCase().contains('network') == true) {
+      return tr('check_connection');
+    }
+    final detail = (error.message?.isNotEmpty ?? false)
+        ? error.message!
+        : error.code;
+    return '${tr('google_signin_failed')}\n$detail';
   }
 
   void _showError(String message) {

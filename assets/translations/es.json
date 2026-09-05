@@ -153,6 +153,8 @@
   "anon_login": "Inicio de sesión anónimo",
   "proceed_anon": "Proceder de forma anónima",
   "continue_anonymously": "Continuar de forma anónima",
+  "continue_with_google": "Continuar con Google",
+  "or": "o",
   "general": "General",
   "appearance": "Apariencia",
   "content_preferences": "Contenido y pantalla",
@@ -343,6 +345,7 @@
   "password_change": "Cambio de contraseña",
   "enter_new_pass": "Ingresa una nueva contraseña",
   "email_exists": "Ya existe una cuenta para este correo electrónico.",
+  "google_email_conflict": "Ya existe una cuenta con este correo electrónico. Inicia sesión con tu correo y contraseña.",
   "operation_not_allowed": "Este método de registro está deshabilitado en este momento",
   "signup": "Regístrate",
   "signup_to_sync": "Regístrate para sincronizar tus películas y programas de TV marcados con tu cuenta en línea.",
@@ -609,6 +612,7 @@
   "subtitles_selected": "{count} seleccionados",
   "apply": "Aplicar",
   "refresh": "Actualizar",
+  "subtitle_unavailable_pick_another": "Este subtítulo no está disponible. Elige otro",
   "failed_load_subtitles": "Error al cargar subtítulos: {error}",
   "downloading_processing_subtitles": "Descargando y procesando {count} subtítulo(s)...",
   "added_external_subtitles": "Se agregaron {count} subtítulo(s) externo(s). Verifique el menú de subtítulos para seleccionar.",
@@ -633,5 +637,9 @@
   "failed_upload_subtitle": "Error al cargar subtítulo: {error}",
   "no_file_selected": "Ningún archivo seleccionado",
   "finding_best_source": "Por favor espere mientras encontramos la mejor fuente",
-  "playback_failed": "No se pudo iniciar la reproducción"
+  "playback_failed": "No se pudo iniciar la reproducción",
+  "google_signin_failed": "No se pudo iniciar sesión con Google. Inténtalo de nuevo.",
+  "link_unavailable": "No está en TMDB",
+  "link_unavailable_message": "TMDB no tiene ningún registro de este enlace. Puede que se haya eliminado.",
+  "link_unreadable": "No se encontró ningún enlace de TMDB o IMDb en lo que compartiste"
 }
