@@ -317,6 +317,8 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
         enableNextEpisodeButton: widget.mediaType == MediaType.tvShow &&
             widget.settings.enableNextEpisodeButton,
         introDbSkipButtonBuilder: _buildIntroDbSkipButton,
+        introDbSkipAvailable: _canSkipIntroDbSegment,
+        onIntroDbSkip: _skipActiveIntroDbSegment,
         // The native MediaRouteButton currently crashes on some Android
         // devices when its platform-view background resolves to transparent.
         enableCast: false,
@@ -429,6 +431,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
                     _externalSubtitles.showExternalSubtitlesMenu(
                       context: context,
                       colors: widget.colors,
+                      scraperApiUrl: _resolveScraperApiUrl(),
                       mediaType: widget.mediaType,
                       movieMetadata: widget.movieMetadata,
                       tvMetadata: widget.tvMetadata,
@@ -1049,9 +1052,18 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
         IntroDbSegmentType.preview => tr('skip_preview'),
       };
 
+  /// The controls keep this button outside their fade, so they ask whether it
+  /// has anything to skip before giving it space. On television the TV menu and
+  /// the next-episode prompt own the select key while they are up, so the skip
+  /// button steps aside rather than competing with them.
+  bool _canSkipIntroDbSegment() =>
+      _activeIntroDbSegment != null &&
+      widget.settings.enableIntroDbSkipButtons &&
+      (!widget.useTvControls || (_tvMenu == null && _tvNextEpisode == null));
+
   Widget _buildIntroDbSkipButton(BuildContext context) {
     final segment = _activeIntroDbSegment;
-    if (segment == null || !widget.settings.enableIntroDbSkipButtons) {
+    if (segment == null || !_canSkipIntroDbSegment()) {
       return const SizedBox.shrink();
     }
     return FilledButton.icon(
@@ -2393,7 +2405,6 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
           download: false,
           useTvPlayer: true,
           onTvPlayerExit: widget.onTvPlayerExit,
-          forceAutoLoad: true,
           metadata: _metadataForTvEpisode(episode),
         ),
       ),
@@ -2410,7 +2421,6 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
           download: false,
           useTvPlayer: true,
           onTvPlayerExit: widget.onTvPlayerExit,
-          forceAutoLoad: true,
           metadata: MovieStreamMetadata(
             movieId: movie.movieId,
             movieName: movie.title,

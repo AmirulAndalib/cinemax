@@ -17,6 +17,7 @@ import '../../provider/app_dependency_provider.dart';
 import '../../provider/settings_provider.dart';
 import '../../services/bookmark_sync_service.dart';
 import '../../services/globle_method.dart';
+import '../../services/recently_watched_sync_service.dart';
 import '../../ui_components/app_ui_components.dart';
 import '../../widgets/common_widgets.dart';
 import '../movie/movie_detail.dart';
@@ -141,7 +142,13 @@ class _SyncScreenState extends State<SyncScreen>
     setState(() => _isActionRunning = true);
     final stopwatch = Stopwatch()..start();
 
-    final success = await BookmarkSyncService.instance.syncNow(force: true);
+    final results = await Future.wait(<Future<bool>>[
+      BookmarkSyncService.instance.syncNow(force: true),
+      RecentlyWatchedSyncService.instance.syncNow(force: true),
+    ]);
+    // This screen reports on bookmarks, so only their outcome drives the
+    // message; a failed recents merge is retried by the next sync.
+    final success = results.first;
     if (mounted) {
       context.read<SettingsProvider>().analytics.trackCloudSync(
             action: 'full_sync',

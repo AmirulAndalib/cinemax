@@ -26,9 +26,7 @@ abstract final class DownloadSelectionSheets {
             _DownloadChoice(
               value: provider,
               title: provider.displayName,
-              subtitle: provider.type == VideoProviderType.directVixSrc
-                  ? 'Direct provider'
-                  : 'Streaming provider',
+              subtitle: provider.contentDescription,
               icon: PhosphorIcons.playCircle(),
             ),
         ],

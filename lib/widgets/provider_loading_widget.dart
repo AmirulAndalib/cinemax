@@ -402,16 +402,20 @@ class _ProviderLoadingWidgetState extends State<ProviderLoadingWidget>
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (isHighlighted &&
-                        provider.content?.trim().isNotEmpty == true) ...[
-                      const SizedBox(height: 3),
+                    // Every row advertises its catalogue so the coverage of
+                    // the neighbouring sources is visible too, not just the
+                    // one currently being tried.
+                    if (provider.content?.trim().isNotEmpty == true) ...[
+                      SizedBox(height: isHighlighted ? 3 : 2),
                       Text(
                         provider.content!.trim(),
-                        maxLines: compact ? 2 : 3,
+                        maxLines: isHighlighted ? (compact ? 2 : 3) : 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontSize: compact ? 11.5 : 12,
+                          fontSize: isHighlighted
+                              ? (compact ? 11.5 : 12)
+                              : (compact ? 10.5 : 11),
                           fontFamily: 'Figtree',
                           height: 1.25,
                         ),

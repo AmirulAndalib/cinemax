@@ -6,6 +6,7 @@ class TvFocusable extends StatefulWidget {
     required this.child,
     required this.onActivate,
     required this.semanticLabel,
+    this.onLongPress,
     this.focusNode,
     this.autofocus = false,
     this.enabled = true,
@@ -21,6 +22,11 @@ class TvFocusable extends StatefulWidget {
 
   final Widget child;
   final VoidCallback onActivate;
+
+  /// Pointer-driven stand-in for the remote's hold gesture, for the TV builds
+  /// that ship with a touchpad or mouse. Remote input never reaches it.
+  final VoidCallback? onLongPress;
+
   final String semanticLabel;
   final FocusNode? focusNode;
   final bool autofocus;
@@ -107,6 +113,7 @@ class _TvFocusableState extends State<TvFocusable> {
       focused: _hasFocus,
       label: widget.semanticLabel,
       onTap: widget.enabled ? widget.onActivate : null,
+      onLongPress: widget.enabled ? widget.onLongPress : null,
       child: FocusableActionDetector(
         enabled: widget.enabled,
         includeFocusSemantics: false,
@@ -130,6 +137,7 @@ class _TvFocusableState extends State<TvFocusable> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: widget.enabled ? widget.onActivate : null,
+          onLongPress: widget.enabled ? widget.onLongPress : null,
           child: AnimatedScale(
             scale: _hasFocus ? widget.focusScale : 1,
             duration: const Duration(milliseconds: 150),

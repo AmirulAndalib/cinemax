@@ -195,6 +195,244 @@ void main() {
       );
     });
   });
+
+  group('WellnessInsights derived patterns', () {
+    final period = WellnessPeriod(
+      startUtc: DateTime.utc(2026, 8, 17),
+      endUtc: DateTime.utc(2026, 8, 24),
+    );
+
+    test('indexes the hour grid from Monday', () {
+      // 2026-08-17 is a Monday; 2026-08-23 is the Sunday that closes the week.
+      final insights = WellnessInsights.fromSessions(
+        [
+          _session(
+            id: 'monday',
+            contentId: 'a',
+            title: 'Monday night',
+            start: DateTime.utc(2026, 8, 17, 21),
+            end: DateTime.utc(2026, 8, 17, 22),
+          ),
+          _session(
+            id: 'sunday',
+            contentId: 'b',
+            title: 'Sunday morning',
+            start: DateTime.utc(2026, 8, 23, 9),
+            end: DateTime.utc(2026, 8, 23, 9, 30),
+          ),
+        ],
+        period: period,
+      );
+
+      expect(insights.hourOfWeekMs, hasLength(7));
+      expect(insights.hourOfWeekMs.first, hasLength(24));
+      expect(
+        insights.hourOfWeekMs[0][21],
+        const Duration(hours: 1).inMilliseconds,
+      );
+      expect(
+        insights.hourOfWeekMs[6][9],
+        const Duration(minutes: 30).inMilliseconds,
+      );
+      expect(insights.peakHourOfWeek, (0, 21, const Duration(hours: 1).inMilliseconds));
+    });
+
+    test('splits the day into morning, afternoon, evening and late night', () {
+      final insights = WellnessInsights.fromSessions(
+        [
+          _session(
+            id: 'morning',
+            contentId: 'a',
+            title: 'Morning',
+            start: DateTime.utc(2026, 8, 18, 7),
+            end: DateTime.utc(2026, 8, 18, 8),
+          ),
+          _session(
+            id: 'afternoon',
+            contentId: 'b',
+            title: 'Afternoon',
+            start: DateTime.utc(2026, 8, 18, 14),
+            end: DateTime.utc(2026, 8, 18, 14, 30),
+          ),
+          _session(
+            id: 'evening',
+            contentId: 'c',
+            title: 'Evening',
+            start: DateTime.utc(2026, 8, 18, 19),
+            end: DateTime.utc(2026, 8, 18, 21),
+          ),
+          _session(
+            id: 'late',
+            contentId: 'd',
+            title: 'Late',
+            start: DateTime.utc(2026, 8, 18, 23),
+            end: DateTime.utc(2026, 8, 18, 23, 45),
+          ),
+        ],
+        period: period,
+      );
+
+      expect(insights.partOfDayMs, hasLength(4));
+      expect(insights.partOfDayMs[0], const Duration(hours: 1).inMilliseconds);
+      expect(
+        insights.partOfDayMs[1],
+        const Duration(minutes: 30).inMilliseconds,
+      );
+      expect(insights.partOfDayMs[2], const Duration(hours: 2).inMilliseconds);
+      expect(
+        insights.partOfDayMs[3],
+        const Duration(minutes: 45).inMilliseconds,
+      );
+      // Late night is the same 22:00–05:00 window the meter reports.
+      expect(
+        insights.lateNightMs,
+        const Duration(minutes: 45).inMilliseconds,
+      );
+    });
+
+    test('separates weekday from weekend viewing', () {
+      final insights = WellnessInsights.fromSessions(
+        [
+          _session(
+            id: 'friday',
+            contentId: 'a',
+            title: 'Friday',
+            start: DateTime.utc(2026, 8, 21, 20),
+            end: DateTime.utc(2026, 8, 21, 21),
+          ),
+          _session(
+            id: 'saturday',
+            contentId: 'b',
+            title: 'Saturday',
+            start: DateTime.utc(2026, 8, 22, 20),
+            end: DateTime.utc(2026, 8, 22, 23),
+          ),
+        ],
+        period: period,
+      );
+
+      expect(insights.weekdayWatchedMs, const Duration(hours: 1).inMilliseconds);
+      expect(insights.weekendWatchedMs, const Duration(hours: 3).inMilliseconds);
+      expect(insights.busiestDay?.$1, DateTime(2026, 8, 22));
+      expect(insights.busiestDay?.$2, const Duration(hours: 3).inMilliseconds);
+    });
+
+    test('measures streaks over consecutive days', () {
+      final insights = WellnessInsights.fromSessions(
+        [
+          for (final day in [17, 18, 19, 22, 23])
+            _session(
+              id: 'day-$day',
+              contentId: 'c-$day',
+              title: 'Day $day',
+              start: DateTime.utc(2026, 8, day, 20),
+              end: DateTime.utc(2026, 8, day, 21),
+            ),
+        ],
+        period: period,
+      );
+
+      expect(insights.longestStreakDays, 3);
+      expect(insights.activeDays, 5);
+      expect(insights.periodDays, 7);
+      // Counted from the day given, so a broken run reads as zero.
+      expect(insights.currentStreakDays(DateTime(2026, 8, 23)), 2);
+      expect(insights.currentStreakDays(DateTime(2026, 8, 24)), 2);
+      expect(insights.currentStreakDays(DateTime(2026, 8, 26)), 0);
+    });
+
+    test('reports typical days and sessions rather than only totals', () {
+      final insights = WellnessInsights.fromSessions(
+        [
+          _session(
+            id: 'short',
+            contentId: 'a',
+            title: 'Short',
+            start: DateTime.utc(2026, 8, 17, 20),
+            end: DateTime.utc(2026, 8, 17, 21),
+          ),
+          _session(
+            id: 'medium',
+            contentId: 'b',
+            title: 'Medium',
+            start: DateTime.utc(2026, 8, 18, 20),
+            end: DateTime.utc(2026, 8, 18, 22),
+          ),
+          _session(
+            id: 'long',
+            contentId: 'c',
+            title: 'Long',
+            start: DateTime.utc(2026, 8, 19, 20),
+            end: DateTime.utc(2026, 8, 19, 23),
+          ),
+        ],
+        period: period,
+      );
+
+      expect(insights.activeDays, 3);
+      // The window stops the day after the last recorded viewing, so a week
+      // that is only half over is not counted as half-idle.
+      expect(insights.periodDays, 3);
+      expect(insights.activeDayShare, 1);
+      expect(
+        insights.medianActiveDayMs,
+        const Duration(hours: 2).inMilliseconds,
+      );
+      expect(
+        insights.averageSessionMs,
+        const Duration(hours: 2).inMilliseconds,
+      );
+      expect(
+        insights.longestSessionMs,
+        const Duration(hours: 3).inMilliseconds,
+      );
+    });
+
+    test('completion rate counts finished titles against started ones', () {
+      final insights = WellnessInsights.fromSessions(
+        [
+          _session(
+            id: 'finished',
+            contentId: 'a',
+            title: 'Finished',
+            start: DateTime.utc(2026, 8, 17, 20),
+            end: DateTime.utc(2026, 8, 17, 22),
+            completed: true,
+          ),
+          _session(
+            id: 'unfinished',
+            contentId: 'b',
+            title: 'Unfinished',
+            start: DateTime.utc(2026, 8, 18, 20),
+            end: DateTime.utc(2026, 8, 18, 21),
+          ),
+        ],
+        period: period,
+      );
+
+      expect(insights.titlesStarted, 2);
+      expect(insights.completedTitles, 1);
+      expect(insights.completionRate, closeTo(.5, .0001));
+    });
+
+    test('reads as empty rather than throwing with no sessions', () {
+      final insights = WellnessInsights.fromSessions(
+        const <WellnessViewingSession>[],
+        period: period,
+      );
+
+      expect(insights.totalWatchedMs, 0);
+      expect(insights.partOfDayMs, [0, 0, 0, 0]);
+      expect(insights.peakHourOfWeek, isNull);
+      expect(insights.busiestDay, isNull);
+      expect(insights.completionRate, 0);
+      expect(insights.activeDayShare, 0);
+      expect(insights.medianActiveDayMs, 0);
+      expect(insights.averageSessionMs, 0);
+      expect(insights.currentStreakDays(DateTime(2026, 8, 23)), 0);
+      expect(insights.longestStreakDays, 0);
+    });
+  });
 }
 
 WellnessViewingSession _session({

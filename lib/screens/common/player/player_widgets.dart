@@ -64,7 +64,6 @@ class PlayerNextEpisodeWidget {
           builder: (_) => TVVideoLoader(
             download: false,
             useTvPlayer: useTvPlayer,
-            forceAutoLoad: true,
             metadata: _metadataForEpisode(nextEpisode, tvMetadata),
           ),
         ),
@@ -172,7 +171,6 @@ class PlayerNextEpisodeWidget {
           builder: (_) => TVVideoLoader(
             download: false,
             useTvPlayer: useTvPlayer,
-            forceAutoLoad: true,
             metadata: _metadataForEpisode(nextEpisode, tvMetadata),
           ),
         ),

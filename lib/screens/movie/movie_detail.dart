@@ -950,9 +950,10 @@ class _MovieSummary extends StatelessWidget {
   }
 
   Widget _actions(BuildContext context) {
-    final canWatch =
-        Provider.of<AppDependencyProvider>(context).displayWatchNowButton &&
-            DateTime.tryParse(movie.releaseDate ?? '') != null;
+    final appDependency = Provider.of<AppDependencyProvider>(context);
+    final hasReleaseDate = DateTime.tryParse(movie.releaseDate ?? '') != null;
+    final canWatch = appDependency.displayWatchNowButton && hasReleaseDate;
+    final canDownload = appDependency.displayDownloadButton && hasReleaseDate;
     return Wrap(
       spacing: 12,
       runSpacing: 12,
@@ -963,7 +964,7 @@ class _MovieSummary extends StatelessWidget {
             icon: Icon(PhosphorIcons.playCircle(PhosphorIconsStyle.fill)),
             label: Text(tr('watch_now')),
           ),
-        if (canWatch)
+        if (canDownload)
           OutlinedButton.icon(
             onPressed: onDownload,
             icon: Icon(PhosphorIcons.downloadSimple()),

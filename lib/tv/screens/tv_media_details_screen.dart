@@ -212,7 +212,10 @@ class _DetailsBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
-    final proxy = context.watch<AppDependencyProvider>().tmdbProxy;
+    final appDependency = context.watch<AppDependencyProvider>();
+    final proxy = appDependency.tmdbProxy;
+    final showPlay = data.item.kind == TvMediaKind.movie &&
+        appDependency.displayWatchNowButton;
     final path = data.item.backdropPath ?? data.item.posterPath;
     final imageUrl = path == null
         ? null
@@ -344,7 +347,7 @@ class _DetailsBody extends StatelessWidget {
                         spacing: 14,
                         runSpacing: 14,
                         children: <Widget>[
-                          if (data.item.kind == TvMediaKind.movie)
+                          if (showPlay)
                             _DetailAction(
                               label: 'Play',
                               icon: PhosphorIcons.play(
@@ -367,7 +370,7 @@ class _DetailsBody extends StatelessWidget {
                                       )
                                     : PhosphorIcons.bookmarkSimple(),
                                 onActivate: () => onToggleBookmark(saved),
-                                primary: data.item.kind != TvMediaKind.movie,
+                                primary: !showPlay,
                               );
                             },
                           ),
@@ -419,6 +422,8 @@ class _DetailsBody extends StatelessWidget {
     List<EpisodeList> seasonEpisodes,
   ) async {
     final previousFocus = FocusManager.instance.primaryFocus;
+    final canPlay = episode.episodeId != null &&
+        context.read<AppDependencyProvider>().displayWatchNowButton;
     final facts = <String>[
       if (episode.seasonNumber != null && episode.episodeNumber != null)
         'S${episode.seasonNumber!.toString().padLeft(2, '0')}  •  '
@@ -448,7 +453,7 @@ class _DetailsBody extends StatelessWidget {
         ],
       ),
       actions: <TvDialogAction>[
-        if (episode.episodeId != null)
+        if (canPlay)
           TvDialogAction(
             label: 'Play episode',
             autofocus: true,
@@ -459,7 +464,7 @@ class _DetailsBody extends StatelessWidget {
           ),
         TvDialogAction(
           label: 'Close',
-          autofocus: episode.episodeId == null,
+          autofocus: !canPlay,
           onPressed: () => Navigator.of(context).pop(false),
         ),
       ],

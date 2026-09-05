@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,8 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../models/wellness.dart';
 import '../../models/wellness_insights.dart';
+import '../../models/wellness_recap.dart';
+import '../../models/wellness_time_series.dart';
 import '../../provider/wellness_provider.dart';
 import '../../services/wellness_sync_service.dart';
 import '../../ui_components/app_ui_components.dart';
@@ -35,6 +38,7 @@ class _WellnessScreenState extends State<WellnessScreen> {
   Widget build(BuildContext context) {
     final wellness = context.watch<WellnessProvider>();
     final insights = wellness.insights;
+    final hasRecapHistory = hasRecapWorthyHistory(wellness.sessions);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Viewing Insights'),
@@ -71,11 +75,24 @@ class _WellnessScreenState extends State<WellnessScreen> {
                       provider: wellness,
                     ),
                     const SizedBox(height: 18),
-                    if (insights.isEmpty)
+                    if (insights.isEmpty) ...[
+                      // A finished recap lives outside the selected range, so
+                      // the shelf has to stay reachable even when the range on
+                      // screen is empty.
+                      if (hasRecapHistory) ...[
+                        _RecapShelf(
+                          sessions: wellness.sessions,
+                          onSelected: (period) => _openShareRecap(
+                            wellness,
+                            initialPeriod: period,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                      ],
                       _WellnessEmptyState(
-                        hasHistory: wellness.sessions.isNotEmpty,
-                      )
-                    else ...[
+                        hasHistory: hasRecapHistory,
+                      ),
+                    ] else ...[
                       _HeroCard(
                         insights: insights,
                         previous: wellness.previousInsights,
@@ -143,40 +160,13 @@ class _WellnessScreenState extends State<WellnessScreen> {
                             'Active playback only—pauses and buffering are excluded.',
                       ),
                       const SizedBox(height: 14),
-                      _Panel(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  'Watch time',
-                                  style:
-                                      Theme.of(context).textTheme.titleMedium,
-                                ),
-                                const Spacer(),
-                                Text(
-                                  _duration(insights.totalWatchedMs),
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
-                                      ?.copyWith(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary,
-                                      ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 14),
-                            WellnessBarChart(
-                              key: const Key('wellness-time-chart'),
-                              data: _barData(insights, wellness.range),
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ],
-                        ),
+                      _TimelinePanel(
+                        key: const Key('wellness-timeline-panel'),
+                        insights: insights,
+                        range: wellness.range,
                       ),
+                      const SizedBox(height: 14),
+                      _ConsistencyPanel(insights: insights),
                       const SizedBox(height: 14),
                       _MediaBreakdown(insights: insights),
                       const SizedBox(height: 34),
@@ -189,6 +179,8 @@ class _WellnessScreenState extends State<WellnessScreen> {
                             'Completed titles, returning favorites, and recent sessions.',
                       ),
                       const SizedBox(height: 14),
+                      _CompletionPanel(insights: insights),
+                      const SizedBox(height: 14),
                       _RankedPanel(
                         title: 'Most watched',
                         values: insights.topTitles.take(5).toList(),
@@ -196,6 +188,16 @@ class _WellnessScreenState extends State<WellnessScreen> {
                             'More viewing will reveal your top titles.',
                       ),
                       const SizedBox(height: 14),
+                      if (insights.topSeriesEpisodes.isNotEmpty) ...[
+                        _RankedPanel(
+                          title: 'Series you kept going',
+                          values: insights.topSeriesEpisodes.take(5).toList(),
+                          emptyMessage:
+                              'Episode counts appear once you watch a series.',
+                          valueLabel: _episodeCount,
+                        ),
+                        const SizedBox(height: 14),
+                      ],
                       _HistoryPanel(
                           sessions: insights.sessions.take(8).toList()),
                       const SizedBox(height: 34),
@@ -266,12 +268,12 @@ class _WellnessScreenState extends State<WellnessScreen> {
                             'A private view of your own routine—not a score or a warning.',
                       ),
                       const SizedBox(height: 14),
-                      _Panel(
-                        child: WellnessHeatmap(
-                          key: const Key('wellness-pattern-heatmap'),
-                          values: insights.hourOfWeekMs,
-                        ),
+                      _RhythmPanel(
+                        key: const Key('wellness-rhythm-panel'),
+                        insights: insights,
                       ),
+                      const SizedBox(height: 14),
+                      _DayPartsPanel(insights: insights),
                       const SizedBox(height: 14),
                       _InsightStrip(insights: insights),
                       const SizedBox(height: 26),
@@ -362,7 +364,7 @@ class _WellnessScreenState extends State<WellnessScreen> {
 
   Future<void> _openShareRecap(
     WellnessProvider provider, {
-    _RecapPeriod? initialPeriod,
+    WellnessRecapPeriod? initialPeriod,
   }) async {
     setState(() => _sharing = true);
     try {
@@ -374,7 +376,11 @@ class _WellnessScreenState extends State<WellnessScreen> {
         builder: (context) => _ShareRecapSheet(
           sessions: provider.sessions,
           initialPeriod: initialPeriod ??
-              _recapPeriodForRange(provider.range, DateTime.now()),
+              WellnessRecapPeriod.bestForRange(
+                provider.sessions,
+                provider.range,
+                DateTime.now(),
+              ),
         ),
       );
     } finally {
@@ -544,86 +550,6 @@ class _InsightsActionTile extends StatelessWidget {
   }
 }
 
-enum _RecapPeriodKind { day, week, month, year }
-
-class _RecapPeriod {
-  const _RecapPeriod({
-    required this.id,
-    required this.label,
-    required this.captionLabel,
-    required this.kind,
-    required this.startLocal,
-    required this.endLocal,
-  });
-
-  final String id;
-  final String label;
-  final String captionLabel;
-  final _RecapPeriodKind kind;
-  final DateTime startLocal;
-  final DateTime endLocal;
-
-  WellnessPeriod get wellnessPeriod => WellnessPeriod(
-        startUtc: startLocal.toUtc(),
-        endUtc: endLocal.toUtc(),
-      );
-
-  bool get isComplete => !endLocal.isAfter(DateTime.now());
-
-  factory _RecapPeriod.today(DateTime now) {
-    final start = DateTime(now.year, now.month, now.day);
-    return _RecapPeriod(
-      id: 'day-${DateFormat('yyyy-MM-dd').format(start)}',
-      label: 'Today',
-      captionLabel: 'Today’s recap',
-      kind: _RecapPeriodKind.day,
-      startLocal: start,
-      endLocal: start.add(const Duration(days: 1)),
-    );
-  }
-
-  factory _RecapPeriod.week(DateTime now) {
-    final today = DateTime(now.year, now.month, now.day);
-    final start = today.subtract(Duration(days: today.weekday - 1));
-    return _RecapPeriod(
-      id: 'week-${DateFormat('yyyy-MM-dd').format(start)}',
-      label: 'This week',
-      captionLabel: 'This week’s recap',
-      kind: _RecapPeriodKind.week,
-      startLocal: start,
-      endLocal: start.add(const Duration(days: 7)),
-    );
-  }
-
-  factory _RecapPeriod.month(DateTime month, DateTime now) {
-    final start = DateTime(month.year, month.month);
-    final current = start.year == now.year && start.month == now.month;
-    final label = current || start.year == now.year
-        ? DateFormat.MMMM().format(start)
-        : DateFormat.yMMMM().format(start);
-    return _RecapPeriod(
-      id: 'month-${DateFormat('yyyy-MM').format(start)}',
-      label: label,
-      captionLabel: 'My $label recap',
-      kind: _RecapPeriodKind.month,
-      startLocal: start,
-      endLocal: DateTime(start.year, start.month + 1),
-    );
-  }
-
-  factory _RecapPeriod.year(int year) {
-    final start = DateTime(year);
-    return _RecapPeriod(
-      id: 'year-$year',
-      label: '$year',
-      captionLabel: 'My $year recap',
-      kind: _RecapPeriodKind.year,
-      startLocal: start,
-      endLocal: DateTime(year + 1),
-    );
-  }
-}
-
 enum _RecapStyle { light, dark, lightsOut }
 
 class _ShareRecapSheet extends StatefulWidget {
@@ -633,7 +559,7 @@ class _ShareRecapSheet extends StatefulWidget {
   });
 
   final List<WellnessViewingSession> sessions;
-  final _RecapPeriod initialPeriod;
+  final WellnessRecapPeriod initialPeriod;
 
   @override
   State<_ShareRecapSheet> createState() => _ShareRecapSheetState();
@@ -642,7 +568,7 @@ class _ShareRecapSheet extends StatefulWidget {
 class _ShareRecapSheetState extends State<_ShareRecapSheet> {
   final GlobalKey _recapKey = GlobalKey();
   late _RecapStyle _style;
-  late _RecapPeriod _period;
+  late WellnessRecapPeriod _period;
   bool _includeTopTitle = true;
   bool _sharing = false;
 
@@ -729,7 +655,10 @@ class _ShareRecapSheetState extends State<_ShareRecapSheet> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final insights = _insights;
-    final periods = _availableRecapPeriods(widget.sessions, DateTime.now());
+    final periods = WellnessRecapPeriod.available(
+      widget.sessions,
+      DateTime.now(),
+    );
     if (!periods.any((period) => period.id == _period.id)) {
       periods.insert(0, _period);
     }
@@ -1013,7 +942,7 @@ class _ShareRecapCard extends StatelessWidget {
   });
 
   final WellnessInsights insights;
-  final _RecapPeriod period;
+  final WellnessRecapPeriod period;
   final _RecapStyle style;
   final bool includeTopTitle;
 
@@ -1376,9 +1305,8 @@ class WellnessPreviewCard extends StatelessWidget {
       provider.sessions,
       period: WellnessPeriod.forRange(WellnessRange.week, now),
     );
-    final featured = _featuredRecapPeriod(provider.sessions, now);
-    final featuredInsights = _insightsForPeriod(provider.sessions, featured);
-    final recapReady = featured.isComplete && !featuredInsights.isEmpty;
+    final featured = WellnessRecapPeriod.featured(provider.sessions, now);
+    final recapReady = featured.hasReadyRecap(provider.sessions, now);
     final colors = Theme.of(context).colorScheme;
     return Container(
       clipBehavior: Clip.antiAlias,
@@ -1696,6 +1624,18 @@ class _HeroCard extends StatelessWidget {
         ? Colors.white.withValues(alpha: .12)
         : Colors.white.withValues(alpha: .28);
     final difference = insights.totalWatchedMs - previous.totalWatchedMs;
+    final today = DateTime.now();
+    final trailStart = DateTime(today.year, today.month, today.day)
+        .subtract(const Duration(days: 13));
+    final trail = List<int>.generate(
+      14,
+      (index) =>
+          insights.dailyWatchedMs[trailStart.add(Duration(days: index))] ?? 0,
+      growable: false,
+    );
+    // The sparkline's own ring is cut to its surface, so the plate underneath
+    // has to be an opaque color rather than a wash over the gradient.
+    final trailSurface = Color.alphaBlend(translucentSurface, rawGradient[1]);
     final comparison = range == WellnessRange.allTime
         ? 'Across ${insights.activeDays} viewing days'
         : previous.totalWatchedMs == 0
@@ -1835,6 +1775,46 @@ class _HeroCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (trail.any((value) => value > 0)) ...[
+                      const SizedBox(height: 18),
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+                        decoration: BoxDecoration(
+                          color: trailSurface,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: foreground.withValues(alpha: .12),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            WellnessSparkline(
+                              key: const Key('wellness-hero-sparkline'),
+                              values: trail,
+                              height: 38,
+                              color: foreground,
+                              surfaceColor: trailSurface,
+                              semanticsLabel:
+                                  'Watch time for each of the last 14 days, '
+                                  'ending today at ${_duration(trail.last)}.',
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'LAST 14 DAYS',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    color: foreground.withValues(alpha: .72),
+                                    letterSpacing: 1.0,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 );
                 final supporting = Wrap(
@@ -1938,26 +1918,20 @@ class _RecapShelf extends StatelessWidget {
   const _RecapShelf({required this.sessions, required this.onSelected});
 
   final List<WellnessViewingSession> sessions;
-  final ValueChanged<_RecapPeriod> onSelected;
+  final ValueChanged<WellnessRecapPeriod> onSelected;
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final colors = Theme.of(context).colorScheme;
-    final featured = _featuredRecapPeriod(sessions, now);
-    final featuredInsights = _insightsForPeriod(sessions, featured);
-    final quickPeriods = <_RecapPeriod>[
-      _RecapPeriod.today(now),
-      _RecapPeriod.week(now),
-      _RecapPeriod.year(now.year),
-    ]
+    final featured = WellnessRecapPeriod.featured(sessions, now);
+    final featuredInsights = featured.insightsFrom(sessions);
+    final quickPeriods = WellnessRecapPeriod.available(sessions, now)
         .where((period) => period.id != featured.id)
-        .where((period) {
-          return !_insightsForPeriod(sessions, period).isEmpty;
-        })
+        .where((period) => !period.insightsFrom(sessions).isEmpty)
         .take(3)
         .toList(growable: false);
-    final ready = featured.isComplete;
+    final ready = featured.hasReadyRecap(sessions, now);
 
     return Container(
       clipBehavior: Clip.antiAlias,
@@ -2061,8 +2035,8 @@ class _RecapShelf extends StatelessWidget {
                           if (index > 0) const SizedBox(width: 8),
                           _QuickRecapButton(
                             period: quickPeriods[index],
-                            insights: _insightsForPeriod(
-                                sessions, quickPeriods[index]),
+                            insights:
+                                quickPeriods[index].insightsFrom(sessions),
                             onTap: () => onSelected(quickPeriods[index]),
                           ),
                         ],
@@ -2086,7 +2060,7 @@ class _QuickRecapButton extends StatelessWidget {
     required this.onTap,
   });
 
-  final _RecapPeriod period;
+  final WellnessRecapPeriod period;
   final WellnessInsights insights;
   final VoidCallback onTap;
 
@@ -2227,58 +2201,200 @@ class _StatGrid extends StatelessWidget {
   }
 }
 
-class _MediaBreakdown extends StatelessWidget {
+class _MediaBreakdown extends StatefulWidget {
   const _MediaBreakdown({required this.insights});
 
   final WellnessInsights insights;
 
   @override
+  State<_MediaBreakdown> createState() => _MediaBreakdownState();
+}
+
+class _MediaBreakdownState extends State<_MediaBreakdown> {
+  int? _selected;
+
+  @override
+  void didUpdateWidget(_MediaBreakdown oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.insights != widget.insights) _selected = null;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final surface = _insightSurface(context);
+    final palette = WellnessChartPalette.of(context, surface: surface);
+    final insights = widget.insights;
+    // Fixed order, fixed slots: movies always wear slot 1, so a period with no
+    // live TV never repaints episodes.
     final entries = <(String, int, Color)>[
-      ('Movies', insights.movieMs, colors.primary),
-      ('Episodes', insights.episodeMs, colors.tertiary),
-      ('Live TV', insights.liveMs, colors.secondary),
+      ('Movies', insights.movieMs, palette.categorical[0]),
+      ('Episodes', insights.episodeMs, palette.categorical[1]),
+      ('Live TV', insights.liveMs, palette.categorical[2]),
     ];
+    final total = entries.fold<int>(0, (sum, entry) => sum + entry.$2);
+    final selected = _selected;
+    final centerLabel = selected == null
+        ? _duration(total)
+        : _duration(entries[selected].$2);
+    final centerCaption = selected == null
+        ? 'total playback'
+        : '${entries[selected].$1} · ${_share(entries[selected].$2, total)}';
+
+    void select(int? index) => setState(() => _selected = index);
+
+    final chart = WellnessDonutChart(
+      key: const Key('wellness-media-donut'),
+      slices: [
+        for (final entry in entries)
+          WellnessDonutSlice(
+            label: entry.$1,
+            value: entry.$2,
+            color: entry.$3,
+          ),
+      ],
+      centerLabel: centerLabel,
+      centerCaption: centerCaption,
+      selectedIndex: selected,
+      onSelected: select,
+      surfaceColor: surface,
+    );
+    final legend = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < entries.length; index++)
+          _MediaLegendRow(
+            label: entries[index].$1,
+            valueLabel: _duration(entries[index].$2),
+            shareLabel: _share(entries[index].$2, total),
+            color: entries[index].$3,
+            selected: selected == index,
+            dimmed: selected != null && selected != index,
+            onTap: () => select(selected == index ? null : index),
+          ),
+      ],
+    );
+
     return _Panel(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final chart = WellnessDonutChart(
-            values: entries.map((entry) => entry.$2).toList(),
-            colors: entries.map((entry) => entry.$3).toList(),
-            centerLabel: 'Playback\nmix',
-          );
-          final legend = Column(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              for (final entry in entries)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 7),
-                  child: Row(
+              Expanded(
+                child: Text(
+                  'Playback mix',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              Text(
+                'Tap a slice',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) => constraints.maxWidth > 520
+                ? Row(
                     children: [
-                      Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: entry.$3,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text(entry.$1)),
-                      Text(_duration(entry.$2)),
+                      chart,
+                      const SizedBox(width: 26),
+                      Expanded(child: legend),
+                    ],
+                  )
+                : Column(
+                    children: [
+                      chart,
+                      const SizedBox(height: 16),
+                      legend,
                     ],
                   ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Legend row that doubles as the donut's control surface — the whole row is
+/// the hit target, and it carries the value so the ring is never the only way
+/// to read one.
+class _MediaLegendRow extends StatelessWidget {
+  const _MediaLegendRow({
+    required this.label,
+    required this.valueLabel,
+    required this.shareLabel,
+    required this.color,
+    required this.selected,
+    required this.dimmed,
+    required this.onTap,
+  });
+
+  final String label;
+  final String valueLabel;
+  final String shareLabel;
+  final Color color;
+  final bool selected;
+  final bool dimmed;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$label, $valueLabel, $shareLabel',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: ExcludeSemantics(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
+            child: Row(
+              children: [
+                Container(
+                  width: 11,
+                  height: 11,
+                  decoration: BoxDecoration(
+                    color: dimmed ? color.withValues(alpha: .42) : color,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
                 ),
-            ],
-          );
-          return constraints.maxWidth > 520
-              ? Row(children: [
-                  chart,
-                  const SizedBox(width: 30),
-                  Expanded(child: legend)
-                ])
-              : Column(children: [chart, const SizedBox(height: 18), legend]);
-        },
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: selected ? FontWeight.w800 : null,
+                    ),
+                  ),
+                ),
+                Text(
+                  valueLabel,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontFeatures: const [ui.FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 42,
+                  child: Text(
+                    shareLabel,
+                    textAlign: TextAlign.right,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontFeatures: const [ui.FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2289,15 +2405,24 @@ class _RankedPanel extends StatelessWidget {
     required this.title,
     required this.values,
     required this.emptyMessage,
+    this.valueLabel = _duration,
   });
 
   final String title;
   final List<WellnessRankedValue> values;
   final String emptyMessage;
 
+  /// Ranked values are not always durations — episode counts use their own
+  /// formatter.
+  final String Function(int value) valueLabel;
+
   @override
   Widget build(BuildContext context) {
     final max = values.isEmpty ? 1 : values.first.value;
+    final palette = WellnessChartPalette.of(
+      context,
+      surface: _insightSurface(context),
+    );
     return _Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2332,15 +2457,28 @@ class _RankedPanel extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Expanded(child: Text(values[index].label)),
-                  Text(_duration(values[index].value)),
+                  Expanded(
+                    child: Text(
+                      values[index].label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Text(
+                    valueLabel(values[index].value),
+                    style: const TextStyle(
+                      fontFeatures: [ui.FontFeature.tabularFigures()],
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 6),
               LinearProgressIndicator(
-                value: values[index].value / max,
+                value: max == 0 ? 0 : values[index].value / max,
                 minHeight: 5,
                 borderRadius: BorderRadius.circular(99),
+                color: palette.primaryMark,
+                backgroundColor: palette.emptyCell,
               ),
               if (index != values.length - 1) const SizedBox(height: 14),
             ],
@@ -2580,28 +2718,917 @@ class _InsightStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final peak = _peakHour(insights.hourOfWeekMs);
-    final observations = <String>[
-      'Your average active viewing day was ${_duration(insights.averageActiveDayMs)}.',
+    final theme = Theme.of(context);
+    final peak = insights.peakHourOfWeek;
+    final busiest = insights.busiestDay;
+    final total = insights.totalWatchedMs;
+    final streak = insights.currentStreakDays();
+    final observations = <(IconData, String)>[
+      if (streak > 1)
+        (
+          PhosphorIcons.flame(),
+          'You have watched something $streak days running — your longest run '
+              'is ${insights.longestStreakDays} days.',
+        ),
       if (peak != null)
-        'Your most active window was ${peak.$1} around ${peak.$2}.',
+        (
+          PhosphorIcons.clock(),
+          'Your most reliable window is ${_weekdayName(peak.$1)} at '
+              '${_hourRange(peak.$2)}, ${_duration(peak.$3)} in total.',
+        ),
+      if (busiest != null)
+        (
+          PhosphorIcons.calendarStar(),
+          'Your heaviest day was ${DateFormat.MMMEd().format(busiest.$1)} at '
+              '${_duration(busiest.$2)}.',
+        ),
+      if (insights.averageSessionMs > 0)
+        (
+          PhosphorIcons.hourglass(),
+          'A typical sitting runs ${_duration(insights.averageSessionMs)}, and '
+              'a typical active day ${_duration(insights.medianActiveDayMs)}.',
+        ),
+      if (total > 0 && insights.lateNightMs > 0)
+        (
+          PhosphorIcons.moon(),
+          '${_share(insights.lateNightMs, total)} of your viewing happens '
+              'after 10pm.',
+        ),
+      if (insights.titlesStarted > 0)
+        (
+          PhosphorIcons.checkCircle(),
+          'You finish ${_percent(insights.completionRate)} of what you start '
+              '(${insights.completedTitles} of ${insights.titlesStarted}).',
+        ),
       if (insights.longestSessionMs > 0)
-        'Your longest viewing session was ${_duration(insights.longestSessionMs)}.',
+        (
+          PhosphorIcons.filmSlate(),
+          'Your longest single session was '
+              '${_duration(insights.longestSessionMs)}.',
+        ),
       if (insights.topTitles.isNotEmpty)
-        '${insights.topTitles.first.label} held the most viewing time.',
+        (
+          PhosphorIcons.crown(),
+          '${insights.topTitles.first.label} held the most viewing time.',
+        ),
+    ];
+    if (observations.isEmpty) {
+      return _Panel(
+        child: Text(
+          'Watch a few things and this is where the patterns show up.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('What stands out', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 6),
+          for (final observation in observations)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 7),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      observation.$1,
+                      size: 17,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      observation.$2,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The time-series panel: bar chart, a callout for the tapped bucket, and a
+/// table of every value behind a toggle so no number lives only in the chart.
+class _TimelinePanel extends StatefulWidget {
+  const _TimelinePanel({
+    required this.insights,
+    required this.range,
+    super.key,
+  });
+
+  final WellnessInsights insights;
+  final WellnessRange range;
+
+  @override
+  State<_TimelinePanel> createState() => _TimelinePanelState();
+}
+
+class _TimelinePanelState extends State<_TimelinePanel> {
+  int? _selected;
+  bool _showTable = false;
+
+  @override
+  void didUpdateWidget(_TimelinePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A different range means different buckets; a stale index would point at
+    // the wrong span.
+    if (oldWidget.range != widget.range ||
+        oldWidget.insights != widget.insights) {
+      _selected = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surface = _insightSurface(context);
+    final series = WellnessTimeSeries.forRange(widget.insights, widget.range);
+    final selected =
+        _selected != null && _selected! < series.buckets.length ? _selected : null;
+    final busiest = series.indexOfBusiest();
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Watch time', style: theme.textTheme.titleMedium),
+                    Text(
+                      'by ${series.unitLabel} · ${_rangeName(widget.range)}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                _duration(widget.insights.totalWatchedMs),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  fontFeatures: const [ui.FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          WellnessBarChart(
+            key: const Key('wellness-time-chart'),
+            data: [
+              for (final bucket in series.buckets)
+                WellnessBarDatum(
+                  label: bucket.label,
+                  fullLabel: bucket.fullLabel,
+                  value: bucket.totalMs,
+                ),
+            ],
+            selectedIndex: selected,
+            onSelected: (index) => setState(() => _selected = index),
+            averageMs: series.averageMs,
+            surfaceColor: surface,
+            semanticsLabel:
+                'Watch time by ${series.unitLabel}. Total '
+                '${_duration(series.totalMs)} across ${series.activeBuckets} '
+                'active ${series.unitLabel}s.',
+          ),
+          const SizedBox(height: 14),
+          if (selected == null)
+            _TimelineSummary(series: series, busiest: busiest)
+          else
+            _BucketCallout(
+              bucket: series.buckets[selected],
+              periodTotalMs: series.totalMs,
+              sessions: widget.insights.sessions,
+              unitLabel: series.unitLabel,
+              onClose: () => setState(() => _selected = null),
+            ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => _showTable = !_showTable),
+              icon: Icon(
+                _showTable
+                    ? PhosphorIcons.caretUp()
+                    : PhosphorIcons.table(),
+                size: 16,
+              ),
+              label: Text(_showTable ? 'Hide values' : 'All values'),
+            ),
+          ),
+          if (_showTable)
+            _ValuesTable(
+              series: series,
+              selectedIndex: selected,
+              onSelected: (index) => setState(() => _selected = index),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What the chart says before anything is tapped: the average line it draws,
+/// and where the peak sits.
+class _TimelineSummary extends StatelessWidget {
+  const _TimelineSummary({required this.series, required this.busiest});
+
+  final WellnessTimeSeries series;
+  final int busiest;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    if (series.isEmpty) {
+      return Text('Nothing recorded in this range yet.', style: style);
+    }
+    final peak = series.buckets[busiest];
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          PhosphorIcons.handTap(),
+          size: 15,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Tap any bar for that ${series.unitLabel}. Busiest was '
+            '${peak.fullLabel} at ${_duration(peak.totalMs)}; the level line '
+            'marks your ${_duration(series.averageMs.round())} average across '
+            '${series.activeBuckets} active ${series.unitLabel}'
+            '${series.activeBuckets == 1 ? '' : 's'}.',
+            style: style,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The tapped bucket, spelled out: total, share, media split, and what was on.
+class _BucketCallout extends StatelessWidget {
+  const _BucketCallout({
+    required this.bucket,
+    required this.periodTotalMs,
+    required this.sessions,
+    required this.unitLabel,
+    required this.onClose,
+  });
+
+  final WellnessTimeBucket bucket;
+  final int periodTotalMs;
+  final List<WellnessViewingSession> sessions;
+  final String unitLabel;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surface = _insightSurface(context, raised: true);
+    final palette = WellnessChartPalette.of(context, surface: surface);
+    final inside = bucket.sessionsFrom(sessions);
+    final split = bucket.split;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      alignment: Alignment.topCenter,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(14, 12, 8, 14),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        bucket.fullLabel,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        bucket.isEmpty
+                            ? 'No viewing recorded'
+                            : _duration(bucket.totalMs),
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      if (!bucket.isEmpty)
+                        Text(
+                          '${_share(bucket.totalMs, periodTotalMs)} of the '
+                          'range · ${inside.length} '
+                          'session${inside.length == 1 ? '' : 's'}',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Clear selection',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onClose,
+                  icon: Icon(PhosphorIcons.x(), size: 16),
+                ),
+              ],
+            ),
+            if (split != null && !split.isEmpty) ...[
+              const SizedBox(height: 12),
+              WellnessSplitMeter(
+                parts: [
+                  WellnessSplitPart(
+                    label: 'Movies',
+                    value: split.movieMs,
+                    color: palette.categorical[0],
+                  ),
+                  WellnessSplitPart(
+                    label: 'Episodes',
+                    value: split.episodeMs,
+                    color: palette.categorical[1],
+                  ),
+                  WellnessSplitPart(
+                    label: 'Live TV',
+                    value: split.liveMs,
+                    color: palette.categorical[2],
+                  ),
+                ],
+                valueLabel: _duration,
+                surfaceColor: surface,
+              ),
+            ],
+            if (inside.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              for (final session in inside.take(3))
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(
+                    children: [
+                      Icon(
+                        switch (session.mediaType) {
+                          WellnessMediaType.movie => PhosphorIcons.filmSlate(),
+                          WellnessMediaType.episode =>
+                            PhosphorIcons.television(),
+                          WellnessMediaType.live => PhosphorIcons.broadcast(),
+                        },
+                        size: 14,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          session.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                      Text(
+                        _duration(session.watchedMs),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (inside.length > 3)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    '+${inside.length - 3} more this $unitLabel',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Every bucket as text. The chart is the fast read; this is the exact one,
+/// and it is what a screen reader or a print-out gets.
+class _ValuesTable extends StatelessWidget {
+  const _ValuesTable({
+    required this.series,
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  final WellnessTimeSeries series;
+  final int? selectedIndex;
+  final ValueChanged<int?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final total = series.totalMs;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  series.unitLabel.toUpperCase(),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+              Text(
+                'TIME',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 46,
+                child: Text(
+                  'SHARE',
+                  textAlign: TextAlign.right,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        for (var index = 0; index < series.buckets.length; index++)
+          InkWell(
+            onTap: () => onSelected(selectedIndex == index ? null : index),
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      series.buckets[index].fullLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight:
+                            selectedIndex == index ? FontWeight.w800 : null,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    series.buckets[index].isEmpty
+                        ? '—'
+                        : _duration(series.buckets[index].totalMs),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFeatures: const [ui.FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 46,
+                    child: Text(
+                      series.buckets[index].isEmpty
+                          ? ''
+                          : _share(series.buckets[index].totalMs, total),
+                      textAlign: TextAlign.right,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontFeatures: const [ui.FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Streaks, active-day share, and the shape of the last two weeks.
+class _ConsistencyPanel extends StatelessWidget {
+  const _ConsistencyPanel({required this.insights});
+
+  final WellnessInsights insights;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surface = _insightSurface(context);
+    final current = insights.currentStreakDays();
+    final today = DateTime.now();
+    final start = DateTime(today.year, today.month, today.day)
+        .subtract(const Duration(days: 13));
+    final recent = List<int>.generate(
+      14,
+      (index) =>
+          insights.dailyWatchedMs[start.add(Duration(days: index))] ?? 0,
+      growable: false,
+    );
+    final recentActive = recent.where((value) => value > 0).length;
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Consistency', style: theme.textTheme.titleMedium),
+                    Text(
+                      current == 0
+                          ? 'No active streak right now'
+                          : '$current day${current == 1 ? '' : 's'} in a row',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${insights.longestStreakDays}',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    'longest streak',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          WellnessSparkline(
+            values: recent,
+            surfaceColor: surface,
+            semanticsLabel: 'Daily watch time for the last 14 days. '
+                '$recentActive of 14 days had viewing.',
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Last 14 days · $recentActive active',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Text(
+                'Peak ${_duration(recent.fold<int>(0, math.max))}/day',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          WellnessMeter(
+            label: 'Days with viewing',
+            valueLabel: _percent(insights.activeDayShare),
+            ratio: insights.activeDayShare,
+            // periodDays stops at the last recorded day, so "tracked so far"
+            // is what the share actually measures.
+            caption: '${insights.activeDays} of ${insights.periodDays} days '
+                'tracked so far · typical active day '
+                '${_duration(insights.medianActiveDayMs)}',
+            surfaceColor: surface,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Week × hour grid with a tappable cell callout.
+class _RhythmPanel extends StatefulWidget {
+  const _RhythmPanel({required this.insights, super.key});
+
+  final WellnessInsights insights;
+
+  @override
+  State<_RhythmPanel> createState() => _RhythmPanelState();
+}
+
+class _RhythmPanelState extends State<_RhythmPanel> {
+  (int day, int hour)? _selected;
+
+  @override
+  void didUpdateWidget(_RhythmPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.insights != widget.insights) _selected = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surface = _insightSurface(context);
+    final grid = widget.insights.hourOfWeekMs;
+    final peak = widget.insights.peakHourOfWeek;
+    final selected = _selected;
+    final selectedMs = selected == null
+        ? 0
+        : (selected.$1 < grid.length && selected.$2 < grid[selected.$1].length
+            ? grid[selected.$1][selected.$2]
+            : 0);
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Weekly rhythm', style: theme.textTheme.titleMedium),
+                    Text(
+                      'Every hour you watched, summed across this range',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                'Tap a cell',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          WellnessHeatmap(
+            key: const Key('wellness-pattern-heatmap'),
+            values: grid,
+            selectedCell: selected,
+            onSelected: (cell) => setState(() => _selected = cell),
+            surfaceColor: surface,
+          ),
+          const SizedBox(height: 12),
+          if (selected != null)
+            Text(
+              '${_weekdayName(selected.$1)} at ${_hourRange(selected.$2)} — '
+              '${selectedMs == 0 ? 'nothing watched' : _duration(selectedMs)}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            )
+          else if (peak != null)
+            Text(
+              'Your steadiest window is ${_weekdayName(peak.$1)} at '
+              '${_hourRange(peak.$2)} — ${_duration(peak.$3)} in total.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            )
+          else
+            Text(
+              'Watch a little more and your weekly shape will appear here.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Parts of the day as an ordinal ramp, plus weekday/weekend and late-night
+/// shares.
+class _DayPartsPanel extends StatefulWidget {
+  const _DayPartsPanel({required this.insights});
+
+  final WellnessInsights insights;
+
+  @override
+  State<_DayPartsPanel> createState() => _DayPartsPanelState();
+}
+
+class _DayPartsPanelState extends State<_DayPartsPanel> {
+  int? _selected;
+
+  static const _labels = ['Morning', 'Afternoon', 'Evening', 'Late night'];
+  static const _windows = ['5a–12p', '12–5p', '5–10p', '10p–5a'];
+
+  @override
+  void didUpdateWidget(_DayPartsPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.insights != widget.insights) _selected = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surface = _insightSurface(context);
+    final palette = WellnessChartPalette.of(context, surface: surface);
+    final parts = widget.insights.partOfDayMs;
+    final total = parts.fold<int>(0, (sum, value) => sum + value);
+    final selected = _selected;
+    final weekday = widget.insights.weekdayWatchedMs;
+    final weekend = widget.insights.weekendWatchedMs;
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('How your day splits', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 16),
+          WellnessOrdinalBars(
+            key: const Key('wellness-day-parts'),
+            data: [
+              for (var index = 0; index < parts.length; index++)
+                WellnessOrdinalDatum(
+                  label: _labels[index],
+                  caption: _windows[index],
+                  value: parts[index],
+                ),
+            ],
+            selectedIndex: selected,
+            onSelected: (index) => setState(() => _selected = index),
+            surfaceColor: surface,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            selected == null
+                ? 'Ordered from morning to late night — darker means later in '
+                    'the day, longer means more time.'
+                : '${_labels[selected]} (${_windows[selected]}): '
+                    '${_duration(parts[selected])}, '
+                    '${_share(parts[selected], total)} of your viewing.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: selected == null
+                  ? theme.colorScheme.onSurfaceVariant
+                  : theme.colorScheme.onSurface,
+              fontWeight: selected == null ? null : FontWeight.w700,
+            ),
+          ),
+          const Divider(height: 30),
+          Text(
+            'Weekdays vs weekend',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 10),
+          WellnessSplitMeter(
+            parts: [
+              WellnessSplitPart(
+                label: 'Mon–Fri',
+                value: weekday,
+                color: palette.categorical[0],
+              ),
+              WellnessSplitPart(
+                label: 'Sat–Sun',
+                value: weekend,
+                color: palette.categorical[1],
+              ),
+            ],
+            valueLabel: _duration,
+            surfaceColor: surface,
+          ),
+          const SizedBox(height: 14),
+          WellnessMeter(
+            label: 'After 10pm',
+            valueLabel: _percent(
+              total == 0 ? 0 : widget.insights.lateNightMs / total,
+            ),
+            ratio: total == 0 ? 0 : widget.insights.lateNightMs / total,
+            caption: '${_duration(widget.insights.lateNightMs)} of viewing '
+                'landed between 10pm and 5am.',
+            surfaceColor: surface,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Started, finished, sampled — follow-through rather than volume.
+class _CompletionPanel extends StatelessWidget {
+  const _CompletionPanel({required this.insights});
+
+  final WellnessInsights insights;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surface = _insightSurface(context);
+    final stats = <(String, String)>[
+      ('${insights.titlesStarted}', 'started'),
+      ('${insights.completedTitles}', 'finished'),
+      ('${insights.sampledTitles}', 'sampled'),
+      ('${insights.rewatches}', 'rewatched'),
     ];
     return _Panel(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final observation in observations)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                PhosphorIcons.sparkle(),
-                color: Theme.of(context).colorScheme.primary,
+          Text('Follow-through', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 14),
+          WellnessMeter(
+            label: 'Titles finished',
+            valueLabel: _percent(insights.completionRate),
+            ratio: insights.completionRate,
+            caption: '${insights.completedTitles} of '
+                '${insights.titlesStarted} titles you started · average '
+                'session ${_duration(insights.averageSessionMs)}',
+            surfaceColor: surface,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              for (final stat in stats)
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        stat.$1,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        stat.$2,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          if (insights.sampledTitles > 0) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Sampled means under two minutes and under 5% watched — dropped '
+              'early, not counted against you.',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
-              title: Text(observation),
             ),
+          ],
         ],
       ),
     );
@@ -2938,86 +3965,6 @@ double _contrastRatio(Color first, Color second) {
   return (lighter + .05) / (darker + .05);
 }
 
-List<WellnessBarDatum> _barData(
-  WellnessInsights insights,
-  WellnessRange range,
-) {
-  final now = DateTime.now();
-  switch (range) {
-    case WellnessRange.week:
-      final start = DateTime(now.year, now.month, now.day)
-          .subtract(Duration(days: now.weekday - 1));
-      return List<WellnessBarDatum>.generate(7, (index) {
-        final day = start.add(Duration(days: index));
-        return WellnessBarDatum(
-          label: DateFormat.E().format(day).substring(0, 1),
-          value: insights.dailyWatchedMs[day] ?? 0,
-        );
-      });
-    case WellnessRange.month:
-      final count = DateTime(now.year, now.month + 1, 0).day;
-      return List<WellnessBarDatum>.generate(count, (index) {
-        final day = DateTime(now.year, now.month, index + 1);
-        return WellnessBarDatum(
-          label: '${index + 1}',
-          value: insights.dailyWatchedMs[day] ?? 0,
-        );
-      });
-    case WellnessRange.year:
-      return List<WellnessBarDatum>.generate(12, (index) {
-        final month = index + 1;
-        final value = insights.dailyWatchedMs.entries
-            .where((entry) =>
-                entry.key.year == now.year && entry.key.month == month)
-            .fold<int>(0, (total, entry) => total + entry.value);
-        return WellnessBarDatum(
-          label: DateFormat.MMM()
-              .format(DateTime(now.year, month))
-              .substring(0, 1),
-          value: value,
-        );
-      });
-    case WellnessRange.allTime:
-      final years = insights.dailyWatchedMs.keys
-          .map((day) => day.year)
-          .toSet()
-          .toList()
-        ..sort();
-      return years.map((year) {
-        final value = insights.dailyWatchedMs.entries
-            .where((entry) => entry.key.year == year)
-            .fold<int>(0, (total, entry) => total + entry.value);
-        return WellnessBarDatum(label: '$year', value: value);
-      }).toList(growable: false);
-  }
-}
-
-(String, String)? _peakHour(List<List<int>> grid) {
-  var max = 0;
-  var peakDay = 0;
-  var peakHour = 0;
-  for (var day = 0; day < grid.length; day++) {
-    for (var hour = 0; hour < grid[day].length; hour++) {
-      if (grid[day][hour] > max) {
-        max = grid[day][hour];
-        peakDay = day;
-        peakHour = hour;
-      }
-    }
-  }
-  if (max == 0) return null;
-  const days = <String>[
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday'
-  ];
-  return (days[peakDay], DateFormat.j().format(DateTime(2024, 1, 1, peakHour)));
-}
-
 String _duration(int milliseconds) {
   final duration = Duration(milliseconds: milliseconds.abs());
   final hours = duration.inHours;
@@ -3025,6 +3972,23 @@ String _duration(int milliseconds) {
   if (hours == 0) return '${minutes}m';
   if (minutes == 0) return '${hours}h';
   return '${hours}h ${minutes}m';
+}
+
+String _share(int value, int total) =>
+    total <= 0 ? '0%' : '${(value / total * 100).round()}%';
+
+String _percent(double ratio) => '${(ratio.clamp(0.0, 1.0) * 100).round()}%';
+
+String _episodeCount(int value) => '$value ep${value == 1 ? '' : 's'}';
+
+String _weekdayName(int mondayFirstIndex) =>
+    DateFormat.EEEE().format(DateTime(2024, 1, 1 + mondayFirstIndex));
+
+/// "9 PM" reads as an instant; the cell is an hour, so name the hour.
+String _hourRange(int hour) {
+  final start = DateFormat.j().format(DateTime(2024, 1, 1, hour));
+  final end = DateFormat.j().format(DateTime(2024, 1, 1, (hour + 1) % 24));
+  return '$start–$end';
 }
 
 String _trackingSince(List<WellnessViewingSession> sessions) {
@@ -3053,140 +4017,17 @@ String _rangeName(WellnessRange range) => switch (range) {
       WellnessRange.allTime => 'all time',
     };
 
-_RecapPeriod _recapPeriodForRange(WellnessRange range, DateTime now) =>
-    switch (range) {
-      WellnessRange.week => _RecapPeriod.week(now),
-      WellnessRange.month => _RecapPeriod.month(now, now),
-      WellnessRange.year ||
-      WellnessRange.allTime =>
-        _RecapPeriod.year(now.year),
-    };
-
-WellnessInsights _insightsForPeriod(
-  List<WellnessViewingSession> sessions,
-  _RecapPeriod period,
-) =>
-    WellnessInsights.fromSessions(
-      sessions,
-      period: period.wellnessPeriod,
-    );
-
-List<_RecapPeriod> _availableRecapPeriods(
-  List<WellnessViewingSession> sessions,
-  DateTime now,
-) {
-  final periods = <_RecapPeriod>[];
-  final ids = <String>{};
-  void add(_RecapPeriod period) {
-    if (ids.add(period.id)) periods.add(period);
-  }
-
-  add(_RecapPeriod.today(now));
-  add(_RecapPeriod.week(now));
-  add(_RecapPeriod.month(now, now));
-  add(_RecapPeriod.year(now.year));
-
-  final months = sessions
-      .where((session) => !session.isDeleted && session.qualifies)
-      .map((session) {
-        final local = session.startedAtUtc.add(
-          Duration(minutes: session.timezoneOffsetMinutes),
-        );
-        return DateTime(local.year, local.month);
-      })
-      .toSet()
-      .toList()
-    ..sort((a, b) => b.compareTo(a));
-  for (final month in months.take(12)) {
-    add(_RecapPeriod.month(month, now));
-  }
-
-  final years = months.map((month) => month.year).toSet().toList()
-    ..sort((a, b) => b.compareTo(a));
-  for (final year in years) {
-    add(_RecapPeriod.year(year));
-  }
-  return periods;
-}
-
-_RecapPeriod _featuredRecapPeriod(
-  List<WellnessViewingSession> sessions,
-  DateTime now,
-) {
-  if (now.month == DateTime.january) {
-    final previousYear = _RecapPeriod.year(now.year - 1);
-    if (!_insightsForPeriod(sessions, previousYear).isEmpty) {
-      return previousYear;
-    }
-  }
-  if (now.month == DateTime.december && now.day >= 15) {
-    return _RecapPeriod.year(now.year);
-  }
-  if (now.day <= 10) {
-    final previousMonthDate = DateTime(now.year, now.month - 1);
-    final previousMonth = _RecapPeriod.month(previousMonthDate, now);
-    if (!_insightsForPeriod(sessions, previousMonth).isEmpty) {
-      return previousMonth;
-    }
-  }
-  return _RecapPeriod.month(now, now);
-}
-
+/// The recap card's bars come from the same bucketing as the live chart, so a
+/// shared recap can never disagree with the screen it was shared from.
 List<WellnessBarDatum> _recapBarData(
   WellnessInsights insights,
-  _RecapPeriod period,
-) {
-  switch (period.kind) {
-    case _RecapPeriodKind.day:
-      final weekday = period.startLocal.weekday - 1;
-      return List<WellnessBarDatum>.generate(6, (index) {
-        final value = insights.hourOfWeekMs[weekday]
-            .skip(index * 4)
-            .take(4)
-            .fold<int>(0, (total, hour) => total + hour);
-        return WellnessBarDatum(
-          label: DateFormat.j().format(DateTime(2024, 1, 1, index * 4)),
-          value: value,
-        );
-      });
-    case _RecapPeriodKind.week:
-      return List<WellnessBarDatum>.generate(7, (index) {
-        final day = period.startLocal.add(Duration(days: index));
-        return WellnessBarDatum(
-          label: DateFormat.E().format(day).substring(0, 1),
-          value: insights.dailyWatchedMs[day] ?? 0,
-        );
-      });
-    case _RecapPeriodKind.month:
-      final dayCount = DateTime(
-        period.startLocal.year,
-        period.startLocal.month + 1,
-        0,
-      ).day;
-      final weeks = (dayCount / 7).ceil();
-      return List<WellnessBarDatum>.generate(weeks, (week) {
-        var value = 0;
-        for (var offset = 0; offset < 7; offset++) {
-          final day = period.startLocal.add(Duration(days: week * 7 + offset));
-          if (!day.isBefore(period.endLocal)) break;
-          value += insights.dailyWatchedMs[day] ?? 0;
-        }
-        return WellnessBarDatum(label: 'W${week + 1}', value: value);
-      });
-    case _RecapPeriodKind.year:
-      return List<WellnessBarDatum>.generate(12, (index) {
-        final month = index + 1;
-        final value = insights.dailyWatchedMs.entries
-            .where((entry) =>
-                entry.key.year == period.startLocal.year &&
-                entry.key.month == month)
-            .fold<int>(0, (total, entry) => total + entry.value);
-        return WellnessBarDatum(
-          label: DateFormat.MMM()
-              .format(DateTime(period.startLocal.year, month))
-              .substring(0, 1),
-          value: value,
-        );
-      });
-  }
-}
+  WellnessRecapPeriod period,
+) =>
+    WellnessTimeSeries.forRecap(insights, period)
+        .buckets
+        .map((bucket) => WellnessBarDatum(
+              label: bucket.label,
+              value: bucket.totalMs,
+              fullLabel: bucket.fullLabel,
+            ))
+        .toList(growable: false);

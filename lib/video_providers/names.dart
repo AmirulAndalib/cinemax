@@ -33,6 +33,17 @@ class VideoProvider {
     return value == null || value.isEmpty ? fullName : value;
   }
 
+  /// One-line description of what this source can stream. Prefers the
+  /// scraper-supplied [content] blurb and falls back to the provider kind for
+  /// sources that do not advertise one, such as [directVixSrc].
+  String get contentDescription {
+    final value = content?.trim();
+    if (value != null && value.isNotEmpty) return value;
+    return type == VideoProviderType.directVixSrc
+        ? 'Direct provider'
+        : 'Streaming provider';
+  }
+
   static const directVixSrc = VideoProvider(
     fullName: 'VixSrc',
     alias: 'VixSrc Direct',

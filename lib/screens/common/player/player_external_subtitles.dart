@@ -26,6 +26,7 @@ class PlayerExternalSubtitles {
   void showExternalSubtitlesMenu({
     required BuildContext context,
     required List<Color> colors,
+    required String scraperApiUrl,
     required MediaType? mediaType,
     MovieStreamMetadata? movieMetadata,
     TVStreamMetadata? tvMetadata,
@@ -54,6 +55,7 @@ class PlayerExternalSubtitles {
                 _fetchExternalSubtitles(
                   setBottomSheetState,
                   context,
+                  scraperApiUrl,
                   mediaType,
                   movieMetadata,
                   tvMetadata,
@@ -115,6 +117,7 @@ class PlayerExternalSubtitles {
                   onPressed: () => _fetchExternalSubtitles(
                     setBottomSheetState,
                     context,
+                    scraperApiUrl,
                     mediaType,
                     movieMetadata,
                     tvMetadata,
@@ -136,10 +139,8 @@ class PlayerExternalSubtitles {
                       .any((item) => item.id == subtitle.id);
                   return PlayerChoiceCard(
                     title: subtitle.displayName,
-                    subtitle: tr(
-                      'subtitle_source',
-                      namedArgs: {'source': subtitle.source},
-                    ),
+                    subtitle:
+                        subtitle.release.isEmpty ? null : subtitle.release,
                     selected: selected,
                     onTap: () => _toggleExternalSubtitle(
                       subtitle,
@@ -184,6 +185,7 @@ class PlayerExternalSubtitles {
                         : () => _fetchExternalSubtitles(
                               setBottomSheetState,
                               context,
+                              scraperApiUrl,
                               mediaType,
                               movieMetadata,
                               tvMetadata,
@@ -230,6 +232,7 @@ class PlayerExternalSubtitles {
   Future<void> _fetchExternalSubtitles(
     StateSetter setBottomSheetState,
     BuildContext context,
+    String scraperApiUrl,
     MediaType? mediaType,
     MovieStreamMetadata? movieMetadata,
     TVStreamMetadata? tvMetadata,
@@ -242,15 +245,16 @@ class PlayerExternalSubtitles {
 
     try {
       List<ExternalSubtitle> subtitles = [];
+      final service = ExternalSubtitleService(scraperApiUrl);
 
       if (mediaType == MediaType.movie) {
         // Fetch movie subtitles using TMDB ID
-        subtitles = await ExternalSubtitleService.fetchMovieSubtitles(
+        subtitles = await service.fetchMovieSubtitles(
           movieMetadata!.movieId!,
         );
       } else if (mediaType == MediaType.tvShow) {
         // Fetch TV episode subtitles using TMDB ID, season, and episode
-        subtitles = await ExternalSubtitleService.fetchTVSubtitles(
+        subtitles = await service.fetchTVSubtitles(
           tvMetadata!.tvId!,
           tvMetadata.seasonNumber!,
           tvMetadata.episodeNumber!,

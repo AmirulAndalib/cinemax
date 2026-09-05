@@ -5,6 +5,7 @@ import '../../constants/app_constants.dart';
 import '../../services/globle_method.dart';
 import '../../services/auth_navigation_service.dart';
 import '../../services/in_app_messaging_service.dart';
+import '../../services/recently_watched_sync_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -70,6 +71,7 @@ class DeleteAccountScreenState extends State<DeleteAccountScreen> {
               .delete()
               .then((value) async {
             await WellnessProvider.instance.deleteAccountData(uid!);
+            await RecentlyWatchedSyncService.instance.deleteAccountData(uid!);
             await FirebaseFirestore.instance
                 .collection('bookmarks-v2.0')
                 .doc(uid)

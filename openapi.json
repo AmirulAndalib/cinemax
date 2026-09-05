@@ -29,6 +29,10 @@
       "description": "Live channel, HLS extraction, and categorized EPG operations for DLHD."
     },
     {
+      "name": "Subtitles",
+      "description": "Subtitle search across the configured providers, plus the passthrough that serves the files."
+    },
+    {
       "name": "Proxy",
       "description": "Stream proxy pass-through endpoint for video playback."
     }
@@ -281,6 +285,16 @@
             }
           },
           {
+            "name": "full",
+            "in": "query",
+            "required": false,
+            "description": "Set to 'true' or '1' to exhaust every available server from this provider. Defaults to the first available server path.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
             "name": "proxy",
             "in": "query",
             "required": false,
@@ -398,6 +412,16 @@
             }
           },
           {
+            "name": "full",
+            "in": "query",
+            "required": false,
+            "description": "Set to 'true' or '1' to exhaust every available server from this provider. Defaults to the first available server path.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
             "name": "proxy",
             "in": "query",
             "required": false,
@@ -458,6 +482,195 @@
           },
           "500": {
             "description": "Internal server or scraping error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/stream-size": {
+      "post": {
+        "summary": "Estimate Selected Stream Size",
+        "description": "Estimates storage bytes for a stream link returned by stream-movie or stream-tv. Only signed size tokens are accepted; clients cannot submit arbitrary upstream URLs or headers.",
+        "operationId": "estimateStreamSize",
+        "tags": ["Streams"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamSizeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Fast storage estimate from manifest bitrate metadata, or up to seven distributed HLS range probes when bitrate metadata is missing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamSizeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The token is missing, invalid, expired, or points to a disallowed destination.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The upstream stream objects could not be inspected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/subtitles/search": {
+      "get": {
+        "summary": "Search Subtitles",
+        "description": "Searches every configured subtitle provider and returns one combined catalog for a movie or episode. Each entry's `url` points back at this API, so clients never contact a subtitle host directly and never need provider credentials. Entries are deduplicated by `id`. Responses are privately cacheable for 5 minutes.",
+        "operationId": "searchSubtitles",
+        "tags": ["Subtitles"],
+        "parameters": [
+          {
+            "name": "tmdbId",
+            "in": "query",
+            "required": true,
+            "description": "TMDB id of the movie or show.",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "example": "550"
+            }
+          },
+          {
+            "name": "season",
+            "in": "query",
+            "required": false,
+            "description": "Season number. Required together with `episode` for shows.",
+            "schema": { "type": "string", "pattern": "^\\d+$", "example": "1" }
+          },
+          {
+            "name": "episode",
+            "in": "query",
+            "required": false,
+            "description": "Episode number. Required together with `season` for shows.",
+            "schema": { "type": "string", "pattern": "^\\d+$", "example": "1" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Combined subtitle catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubtitleSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid `tmdbId`, or only one of `season` and `episode`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Every subtitle provider failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/subtitles/{provider}/{id}": {
+      "get": {
+        "summary": "Get a Subtitle File",
+        "description": "Serves one subtitle track, converted to WebVTT (or SubRip) with aggregator advertisement cues removed and the body re-encoded to UTF-8. URLs for this endpoint are returned in `subtitles[].url` from a search and in `links[].subtitles[].file` when a scraping provider supplies no subtitles of its own; clients should not construct them by hand. Responses allow any origin and are cacheable for 24 hours.",
+        "operationId": "getSubtitleFile",
+        "tags": ["Subtitles"],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "description": "Subtitle provider that owns the id.",
+            "schema": { "type": "string", "enum": ["natsuki", "wyzie"] }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Provider-specific subtitle id with a `.vtt` or `.srt` extension.",
+            "schema": { "type": "string", "example": "3480430.vtt" }
+          },
+          {
+            "name": "l",
+            "in": "query",
+            "required": false,
+            "description": "ISO 639 language hint used to decode non-UTF-8 uploads.",
+            "schema": { "type": "string", "example": "en" }
+          },
+          {
+            "name": "t",
+            "in": "query",
+            "required": false,
+            "description": "Signed token identifying the upstream file. Required for `wyzie`, whose files live on third-party hosts behind per-download tokens rather than stable ids. Issued by a search or stream response, signed with `STREAM_PROXY_SECRET`, and valid for 12 hours.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subtitle document.",
+            "content": {
+              "text/vtt": {
+                "schema": { "type": "string" },
+                "example": "WEBVTT\n\n1\n00:01:39.892 --> 00:01:41.852\nStop. Stop.\n"
+              },
+              "application/x-subrip": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed subtitle path, or a missing, expired or tampered token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The upstream subtitle host failed or returned an unusable file.",
             "content": {
               "application/json": {
                 "schema": {
@@ -834,6 +1047,11 @@
             "type": "string",
             "example": "VixSrc"
           },
+          "content": {
+            "type": "string",
+            "description": "Human-readable summary of what this provider can stream, shown to users when they pick a source.",
+            "example": "Movies and series, multi-language"
+          },
           "enabled": {
             "type": "boolean",
             "example": true
@@ -868,11 +1086,25 @@
       },
       "ProviderHealthResponse": {
         "type": "object",
-        "required": ["success", "updatedAt", "intervalMs", "summary", "providers"],
+        "required": [
+          "success",
+          "updatedAt",
+          "intervalMs",
+          "summary",
+          "providers"
+        ],
         "properties": {
           "success": { "type": "boolean", "example": true },
-          "startedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "updatedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
           "intervalMs": { "type": "integer", "example": 900000 },
           "methodology": { "type": "string" },
           "summary": {
@@ -979,6 +1211,103 @@
           }
         }
       },
+      "SubtitleCatalogEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "display",
+          "language",
+          "format",
+          "encoding",
+          "isHearingImpaired",
+          "source",
+          "flagUrl",
+          "media"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable `{provider}-{providerId}` identifier.",
+            "example": "natsuki-3852781"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Absolute URL of this API's subtitle passthrough.",
+            "example": "https://your-api/api/v2/subtitles/natsuki/3852781.vtt?l=en"
+          },
+          "display": {
+            "type": "string",
+            "description": "Human label. Carries `(MT)` and `#n` markers so same-language alternatives stay distinguishable.",
+            "example": "English (#2)"
+          },
+          "language": {
+            "type": "string",
+            "description": "ISO 639 language code.",
+            "example": "en"
+          },
+          "format": {
+            "type": "string",
+            "enum": ["vtt", "srt"],
+            "description": "Format the passthrough serves, per `SUBTITLE_OUTPUT_FORMAT`."
+          },
+          "encoding": {
+            "type": "string",
+            "description": "Always `UTF-8`; the passthrough re-encodes upstream files.",
+            "example": "UTF-8"
+          },
+          "isHearingImpaired": { "type": "boolean", "example": false },
+          "source": {
+            "type": "string",
+            "enum": ["natsuki", "wyzie"],
+            "description": "Provider the entry came from."
+          },
+          "flagUrl": {
+            "type": "string",
+            "description": "Flag image for the language, or an empty string when unmapped.",
+            "example": "https://flagsapi.com/US/flat/24.png"
+          },
+          "media": {
+            "type": "string",
+            "description": "Title reported by the provider, or an empty string.",
+            "example": "Fight Club"
+          },
+          "release": {
+            "type": "string",
+            "description": "Release or file name the subtitle was timed against.",
+            "example": "Fight.Club.1999.1080p.BluRay.x264.srt"
+          },
+          "machineTranslated": { "type": "boolean", "example": false }
+        }
+      },
+      "SubtitleSearchResponse": {
+        "type": "object",
+        "required": ["success", "tmdbId", "count", "subtitles"],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "tmdbId": { "type": "integer", "example": 550 },
+          "season": {
+            "type": "integer",
+            "description": "Echoed back for show lookups.",
+            "example": 1
+          },
+          "episode": {
+            "type": "integer",
+            "description": "Echoed back for show lookups.",
+            "example": 1
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of entries in `subtitles`.",
+            "example": 152
+          },
+          "subtitles": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SubtitleCatalogEntry" }
+          }
+        }
+      },
       "ProviderLink": {
         "type": "object",
         "required": ["server", "url", "isM3U8", "quality", "subtitles"],
@@ -1029,6 +1358,10 @@
             "type": "integer",
             "description": "Internal proxy instruction for DASH video height filtering."
           },
+          "sizeToken": {
+            "type": "string",
+            "description": "Signed token for estimating the selected stream's source bytes before download."
+          },
           "requiresProxy": {
             "type": "boolean",
             "description": "Indicates whether anti-hotlink restrictions force this stream through the proxy.",
@@ -1063,6 +1396,82 @@
           "details": {
             "type": "string"
           }
+        }
+      },
+      "StreamSizeRequest": {
+        "type": "object",
+        "required": ["token"],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The sizeToken returned on the selected ProviderLink."
+          }
+        }
+      },
+      "StreamSizeResponse": {
+        "type": "object",
+        "required": [
+          "success",
+          "estimatedBytes",
+          "confidence",
+          "method",
+          "format",
+          "bitrate",
+          "initBytes",
+          "segmentCount"
+        ],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "estimatedBytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Estimated storage bytes for the selected stream."
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low", "unknown"]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "hls-average-bandwidth",
+              "hls-bandwidth",
+              "hls-segment-bitrate",
+              "hls-segment-sample",
+              "resolution-fallback",
+              "dash-bandwidth",
+              "content-length",
+              "unavailable"
+            ]
+          },
+          "bitrate": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Declared aggregate bitrate in bits per second."
+          },
+          "format": {
+            "type": "string",
+            "enum": ["hls", "dash", "unknown"]
+          },
+          "videoBytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "audioBytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "initBytes": { "type": "integer", "format": "int64" },
+          "segmentCount": { "type": "integer" },
+          "durationSeconds": { "type": "number", "nullable": true },
+          "sampledSegments": { "type": "integer" },
+          "successfulSamples": { "type": "integer" },
+          "sampledDurationSeconds": { "type": "number" },
+          "error": { "type": "string" }
         }
       },
       "DlhdChannel": {

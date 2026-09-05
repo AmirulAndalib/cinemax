@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../models/external_subtitles.dart';
 import 'common.dart';
 import 'names.dart';
 
@@ -127,6 +128,48 @@ class ScraperApi {
       return StreamSizeEstimate.fromJson(body);
     } catch (_) {
       return null;
+    } finally {
+      if (_ownsClient) _client.close();
+    }
+  }
+
+  /// Searches the API's subtitle providers for a movie or TV episode.
+  ///
+  /// Every returned URL points back at this API, so subtitle files are
+  /// downloaded from the scraper instead of the upstream subtitle hosts.
+  Future<List<ExternalSubtitle>> searchSubtitles({
+    required int tmdbId,
+    int? season,
+    int? episode,
+  }) async {
+    try {
+      final uri = _endpoint('/subtitles/search', {
+        'tmdbId': '$tmdbId',
+        if (season != null) 'season': '$season',
+        if (episode != null) 'episode': '$episode',
+      });
+      _logRequest(uri);
+      final response = await _get(uri, timeout: const Duration(seconds: 45));
+      _logResponseSummary(uri, response, '${response.body.length} bytes');
+      final body = _decodeObject(response.body);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ScraperApiException(_messageFrom(body, response.statusCode));
+      }
+      if (body['success'] != true) {
+        throw ScraperApiException(_messageFrom(body, response.statusCode));
+      }
+
+      final subtitles = body['subtitles'];
+      if (subtitles is! List) return const [];
+      return subtitles
+          .whereType<Map>()
+          .map(
+            (subtitle) => ExternalSubtitle.fromJson(
+              Map<String, dynamic>.from(subtitle),
+            ),
+          )
+          .where((subtitle) => subtitle.url.isNotEmpty)
+          .toList(growable: false);
     } finally {
       if (_ownsClient) _client.close();
     }
@@ -257,6 +300,11 @@ class ScraperApi {
     debugPrint(
       '[ScraperApi] RESPONSE ${response.statusCode} $uri\n${response.body}',
     );
+  }
+
+  void _logResponseSummary(Uri uri, http.Response response, String summary) {
+    if (!kDebugMode) return;
+    debugPrint('[ScraperApi] RESPONSE ${response.statusCode} $uri ($summary)');
   }
 
   Uri _endpoint(String path, [Map<String, String>? queryParameters]) {

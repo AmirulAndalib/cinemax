@@ -8,6 +8,7 @@ import '../../constants/app_constants.dart';
 import '../../functions/function.dart';
 import '../../models/movie_stream_metadata.dart';
 import '../../models/tv_stream_metadata.dart';
+import '../../provider/app_dependency_provider.dart';
 import '../../provider/settings_provider.dart';
 import '../../screens/movie/movie_video_loader.dart';
 import '../../screens/tv/tv_video_loader.dart';
@@ -38,6 +39,9 @@ class TvHomeShell extends StatefulWidget {
 }
 
 class _TvHomeShellState extends State<TvHomeShell> with RestorationMixin {
+  /// Destination hidden when Remote Config turns Live TV off.
+  static const _liveDestinationId = 'live';
+
   final TvFocusMemory _focusMemory = TvFocusMemory();
   final GlobalKey<TvNavigationRailState> _navigationRailKey =
       GlobalKey<TvNavigationRailState>();
@@ -294,8 +298,29 @@ class _TvHomeShellState extends State<TvHomeShell> with RestorationMixin {
     );
   }
 
+  /// Drops the Live TV destination while the Remote Config toggle is off.
+  List<TvNavigationDestination> _visibleDestinations({
+    required bool showLiveTv,
+  }) {
+    if (showLiveTv) return _destinations;
+    return _destinations
+        .where((destination) => destination.id != _liveDestinationId)
+        .toList(growable: false);
+  }
+
+  /// A restored selection has to fall back once a toggle hides its destination.
+  String _resolveSelectedId(List<TvNavigationDestination> destinations) {
+    final selected = _selectedDestinationId.value;
+    final isVisible =
+        destinations.any((destination) => destination.id == selected);
+    return isVisible ? selected : destinations.first.id;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final showLiveTv = context.watch<AppDependencyProvider>().displayLiveTV;
+    final destinations = _visibleDestinations(showLiveTv: showLiveTv);
+    final selectedId = _resolveSelectedId(destinations);
     return TvFocusMemoryScope(
       memory: _focusMemory,
       child: TvBackDispatcher(
@@ -329,9 +354,9 @@ class _TvHomeShellState extends State<TvHomeShell> with RestorationMixin {
                       children: <Widget>[
                         TvNavigationRail(
                           key: _navigationRailKey,
-                          destinations: _destinations,
-                          selectedId: _selectedDestinationId.value,
-                          autofocusId: _selectedDestinationId.value,
+                          destinations: destinations,
+                          selectedId: selectedId,
+                          autofocusId: selectedId,
                           metrics: metrics,
                           onDestinationSelected: _selectDestination,
                           onMoveRight: _enterDestination,
@@ -341,56 +366,63 @@ class _TvHomeShellState extends State<TvHomeShell> with RestorationMixin {
                           child: ClipRect(
                             child: Builder(
                               builder: (context) {
-                                final selectedIndex = _destinations.indexWhere(
-                                  (destination) =>
-                                      destination.id ==
-                                      _selectedDestinationId.value,
-                                );
-                                final screens = <Widget>[
-                                  TvHomeScreen(
+                                // Keyed by destination id so the stack can
+                                // never drift out of sync with the rail when a
+                                // destination is hidden.
+                                final screens = <String, Widget>{
+                                  'home': TvHomeScreen(
                                     metrics: metrics,
                                     onOpenMedia: _openMedia,
                                     onContinueWatching: _continueWatching,
                                   ),
-                                  TvSearchScreen(
+                                  'search': TvSearchScreen(
                                     metrics: metrics,
                                     onOpenMedia: _openMedia,
                                     focusController: _searchFocusController,
                                   ),
-                                  TvCatalogScreen(
+                                  'movies': TvCatalogScreen(
                                     kind: TvMediaKind.movie,
                                     metrics: metrics,
                                     onOpenMedia: _openMedia,
                                     focusController: _moviesFocusController,
                                   ),
-                                  TvCatalogScreen(
+                                  'series': TvCatalogScreen(
                                     kind: TvMediaKind.series,
                                     metrics: metrics,
                                     onOpenMedia: _openMedia,
                                     focusController: _seriesFocusController,
                                   ),
-                                  TvLiveScreen(metrics: metrics),
-                                  TvLibraryScreen(
+                                  if (showLiveTv)
+                                    _liveDestinationId: TvLiveScreen(
+                                      metrics: metrics,
+                                    ),
+                                  'library': TvLibraryScreen(
                                     key: ValueKey<int>(_libraryRevision),
                                     metrics: metrics,
                                     onOpenMedia: _openMedia,
                                   ),
-                                  TvWellnessScreen(metrics: metrics),
-                                  TvProfileScreen(metrics: metrics),
-                                  TvSettingsScreen(
+                                  'wellness': TvWellnessScreen(
+                                    metrics: metrics,
+                                  ),
+                                  'profile': TvProfileScreen(metrics: metrics),
+                                  'settings': TvSettingsScreen(
                                     metrics: metrics,
                                     focusController: _settingsFocusController,
                                   ),
-                                ];
+                                };
+                                final ids = screens.keys.toList(
+                                  growable: false,
+                                );
+                                final selectedIndex = ids.indexOf(selectedId);
                                 return IndexedStack(
-                                  index: selectedIndex,
+                                  index: selectedIndex < 0 ? 0 : selectedIndex,
                                   children: <Widget>[
                                     for (var index = 0;
-                                        index < screens.length;
+                                        index < ids.length;
                                         index++)
                                       ExcludeFocus(
                                         excluding: index != selectedIndex,
-                                        child: screens[index],
+                                        child: screens[ids[index]]!,
                                       ),
                                   ],
                                 );

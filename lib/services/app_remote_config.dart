@@ -12,6 +12,12 @@ class AppRemoteConfig {
   static const legacyAppLogoKey = 'cinemax_logo';
   static const flixquestApiInstancesKey = 'flixquest_api_instances';
   static const flixquestApiUrlKey = 'flixquest_api_url_v2';
+  static const enableWatchNowKey = 'enable_stream';
+  static const enableDownloadKey = 'enable_download';
+  static const enableLiveTvKey = 'enable_live_tv';
+
+  /// Live TV used to ride on the OTT flag before it got a dedicated key.
+  static const legacyEnableLiveTvKey = 'enable_ott';
 
   static Future<void> configure(FirebaseRemoteConfig remoteConfig) async {
     await remoteConfig.setConfigSettings(
@@ -32,6 +38,12 @@ class AppRemoteConfig {
       'change_log': '',
       flixquestApiInstancesKey: '',
       flixquestApiUrlKey: '',
+      // Feature toggles ship enabled so a failed or offline fetch never hides
+      // playback, downloads or Live TV.
+      enableWatchNowKey: true,
+      enableDownloadKey: true,
+      enableLiveTvKey: true,
+      legacyEnableLiveTvKey: true,
     });
   }
 
@@ -80,8 +92,9 @@ class AppRemoteConfig {
     if (occasionalThemeValue.source == ValueSource.valueRemote) {
       provider.applyRemoteOccasionalTheme(occasionalThemeValue.asString());
     }
-    provider.displayWatchNowButton = remoteConfig.getBool('enable_stream');
-    provider.displayOTTDrawer = remoteConfig.getBool('enable_ott');
+    provider.displayWatchNowButton = remoteConfig.getBool(enableWatchNowKey);
+    provider.displayDownloadButton = remoteConfig.getBool(enableDownloadKey);
+    provider.displayLiveTV = _resolveLiveTv(remoteConfig);
 
     final instancesRaw = remoteConfig.getString(flixquestApiInstancesKey);
     final parsedInstances = parseApiInstances(instancesRaw);
@@ -100,5 +113,16 @@ class AppRemoteConfig {
       changeLog: remoteConfig.getString('change_log'),
     );
     provider.tmdbProxy = remoteConfig.getString('tmdb_proxy');
+  }
+
+  /// Resolves the Live TV toggle, preferring [enableLiveTvKey] and falling back
+  /// to [legacyEnableLiveTvKey] for consoles that have not migrated yet. Only
+  /// values actually published remotely win; otherwise the feature stays on.
+  static bool _resolveLiveTv(FirebaseRemoteConfig remoteConfig) {
+    final value = remoteConfig.getValue(enableLiveTvKey);
+    if (value.source == ValueSource.valueRemote) return value.asBool();
+    final legacy = remoteConfig.getValue(legacyEnableLiveTvKey);
+    if (legacy.source == ValueSource.valueRemote) return legacy.asBool();
+    return true;
   }
 }

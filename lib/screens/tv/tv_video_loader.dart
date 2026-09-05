@@ -40,18 +40,12 @@ class TVVideoLoader extends StatefulWidget {
       required this.download,
       this.useTvPlayer = false,
       this.onTvPlayerExit,
-      this.forceAutoLoad = false,
       super.key});
 
   final TVStreamMetadata metadata;
   final bool download;
   final bool useTvPlayer;
   final VoidCallback? onTvPlayerExit;
-
-  /// Bypasses the "Auto load sources" prompt. Used by in-player transitions
-  /// (next episode, episode switching) so binge-watching stays automatic even
-  /// when the setting is off.
-  final bool forceAutoLoad;
 
   @override
   State<TVVideoLoader> createState() => _TVVideoLoaderState();
@@ -155,9 +149,13 @@ class _TVVideoLoaderState extends State<TVVideoLoader> {
 
           int index = rEpisodes
               .indexWhere((element) => element.id == widget.metadata.episodeId);
-          setState(() {
-            elapsed = rEpisodes[index].elapsed!;
-          });
+          // See [MovieVideoLoader]: the row can reach the database through a
+          // cloud merge before this list snapshot is refreshed.
+          if (index != -1) {
+            setState(() {
+              elapsed = rEpisodes[index].elapsed!;
+            });
+          }
           widget.metadata.elapsed = elapsed;
         }
       } else {
@@ -170,9 +168,7 @@ class _TVVideoLoaderState extends State<TVVideoLoader> {
             tr('episode_may_not_be_available'), context);
       }
 
-      final manualPickRequired = !widget.download &&
-          !widget.forceAutoLoad &&
-          !settings.autoLoadSources;
+      final manualPickRequired = !widget.download && !settings.autoLoadSources;
 
       ProviderSelection? selection;
       if (manualPickRequired) {
@@ -419,7 +415,6 @@ class _TVVideoLoaderState extends State<TVVideoLoader> {
     final download = widget.download;
     final useTvPlayer = widget.useTvPlayer;
     final onTvPlayerExit = widget.onTvPlayerExit;
-    final forceAutoLoad = widget.forceAutoLoad;
     navigator.pop();
     ReportErrorWidget.show(
       navigator.context,
@@ -431,7 +426,6 @@ class _TVVideoLoaderState extends State<TVVideoLoader> {
             download: download,
             useTvPlayer: useTvPlayer,
             onTvPlayerExit: onTvPlayerExit,
-            forceAutoLoad: forceAutoLoad,
           ),
         ),
       ),

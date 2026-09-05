@@ -9,6 +9,7 @@ import '../app/tv_design.dart';
 import '../controllers/tv_home_controller.dart';
 import '../models/tv_media_item.dart';
 import '../widgets/tv_content_row.dart';
+import '../widgets/tv_continue_watching_menu.dart';
 import '../widgets/tv_hero.dart';
 import '../widgets/tv_media_card.dart';
 import '../widgets/tv_state_panel.dart';
@@ -117,6 +118,11 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                 'home-continue-watching',
                 continueWatching,
                 onItemActivated: widget.onContinueWatching,
+                onItemMenu: (item) => _removeFromContinueWatching(
+                  item,
+                  continueWatching.length,
+                ),
+                itemMenuHint: 'Hold OK to remove',
               ),
               _mediaRow('Trending movies', 'home-trending-movies',
                   data.trendingMovies),
@@ -133,8 +139,32 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
     );
   }
 
+  /// Drops an entry from the recently watched store, the way the phone UI's
+  /// long press does.
+  Future<void> _removeFromContinueWatching(
+    TvMediaItem item,
+    int rowLength,
+  ) async {
+    final removal = TvContinueWatchingRemoval.forItem(item);
+    if (removal == null) return;
+    final confirmed = await confirmRemoveFromContinueWatching(
+      context: context,
+      item: item,
+    );
+    if (!confirmed || !mounted) return;
+    await removal.apply(context.read<RecentProvider>());
+    if (!mounted || rowLength > 1) return;
+    // The row unmounts along with its last card and takes focus with it, so
+    // hand the remote the hero instead of leaving it with nothing to steer.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) FocusScope.of(context).nextFocus();
+    });
+  }
+
   Widget _mediaRow(String title, String scopeId, List<TvMediaItem> items,
-      {ValueChanged<TvMediaItem>? onItemActivated}) {
+      {ValueChanged<TvMediaItem>? onItemActivated,
+      ValueChanged<TvMediaItem>? onItemMenu,
+      String? itemMenuHint}) {
     if (items.isEmpty) return const SizedBox.shrink();
     final visibleItems = items.take(16).toList(growable: false);
     return Padding(
@@ -150,6 +180,8 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
           width: widget.metrics.mediaCardWidth,
         ),
         onItemActivated: onItemActivated ?? widget.onOpenMedia,
+        onItemMenu: onItemMenu,
+        itemMenuHint: itemMenuHint,
       ),
     );
   }

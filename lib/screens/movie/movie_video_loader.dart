@@ -39,18 +39,12 @@ class MovieVideoLoader extends StatefulWidget {
       required this.metadata,
       this.useTvPlayer = false,
       this.onTvPlayerExit,
-      this.forceAutoLoad = false,
       super.key});
 
   final bool download;
   final MovieStreamMetadata metadata;
   final bool useTvPlayer;
   final VoidCallback? onTvPlayerExit;
-
-  /// Bypasses the "Auto load sources" prompt. Used by in-player transitions
-  /// (next episode, episode switching) so binge-watching stays automatic even
-  /// when the setting is off.
-  final bool forceAutoLoad;
 
   @override
   State<MovieVideoLoader> createState() => _MovieVideoLoaderState();
@@ -171,9 +165,14 @@ class _MovieVideoLoaderState extends State<MovieVideoLoader> {
             Provider.of<RecentProvider>(context, listen: false).movies;
         int index = rMovies
             .indexWhere((element) => element.id == widget.metadata.movieId);
-        setState(() {
-          elapsed = rMovies[index].elapsed!;
-        });
+        // A cloud merge can add the row to the database before this snapshot of
+        // the provider list catches up, so resume from the start if it is not
+        // here yet rather than indexing past the end.
+        if (index != -1) {
+          setState(() {
+            elapsed = rMovies[index].elapsed!;
+          });
+        }
         widget.metadata.elapsed = elapsed;
       } else {
         widget.metadata.elapsed = 0;
@@ -185,9 +184,7 @@ class _MovieVideoLoaderState extends State<MovieVideoLoader> {
             tr('movie_may_not_be_available'), context);
       }
 
-      final manualPickRequired = !widget.download &&
-          !widget.forceAutoLoad &&
-          !settings.autoLoadSources;
+      final manualPickRequired = !widget.download && !settings.autoLoadSources;
 
       ProviderSelection? selection;
       if (manualPickRequired) {
@@ -431,7 +428,6 @@ class _MovieVideoLoaderState extends State<MovieVideoLoader> {
     final download = widget.download;
     final useTvPlayer = widget.useTvPlayer;
     final onTvPlayerExit = widget.onTvPlayerExit;
-    final forceAutoLoad = widget.forceAutoLoad;
     navigator.pop();
     ReportErrorWidget.show(
       navigator.context,
@@ -443,7 +439,6 @@ class _MovieVideoLoaderState extends State<MovieVideoLoader> {
             download: download,
             useTvPlayer: useTvPlayer,
             onTvPlayerExit: onTvPlayerExit,
-            forceAutoLoad: forceAutoLoad,
           ),
         ),
       ),

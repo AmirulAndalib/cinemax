@@ -19,6 +19,7 @@ import 'package:flutter/services.dart';
 import 'provider/settings_provider.dart';
 import 'provider/wellness_provider.dart';
 import 'services/bookmark_sync_service.dart';
+import 'services/recently_watched_sync_service.dart';
 import 'services/home_widget_navigation_service.dart';
 import 'singleton/sharedpreferences_singleton.dart';
 import 'tv/platform/device_presentation.dart';
@@ -134,6 +135,7 @@ Future<DevicePresentation> appInitialize({
   await appDependencyProvider.getUpdateConfiguration();
 
   await BookmarkSyncService.instance.init();
+  await RecentlyWatchedSyncService.instance.init();
 
   return devicePresentation;
 }

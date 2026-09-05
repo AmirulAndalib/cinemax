@@ -140,6 +140,9 @@ Key endpoints consumed by the app:
 - `GET /providers/status`: Fetches live provider health status, latency, and uptime.
 - `GET /stream-movie`: Scrapes streaming links for movies using TMDB ID.
 - `GET /stream-tv`: Scrapes streaming links for TV episodes using TMDB ID, season, and episode number.
+- `GET /subtitles/search`: Searches every subtitle provider for a movie or episode and returns one combined catalog.
+- `GET /subtitles/{provider}/{id}`: Downloads a subtitle file. The API converts and re-encodes it, so the app never contacts a subtitle host directly.
+- `POST /stream-size`: Estimates the byte size behind a stream token so the quality picker can show sizes.
 - `GET /api/v2/intro`: Retrieves branded intro video configuration.
 
 ---
@@ -152,7 +155,7 @@ FlixQuest uses Firebase for several services:
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Firebase Authentication**   | User authentication, profile management, and session handling.                                                                                                                      |
 | **Cloud Firestore**           | Cloud bookmark synchronization across multiple devices.                                                                                                                             |
-| **Firebase Remote Config**    | Dynamic configuration for app logos, seasonal themes, and vector animation effects. See [`docs/firebase_remote_config.md`](docs/firebase_remote_config.md) for full schema details. |
+| **Firebase Remote Config**    | Dynamic configuration for feature toggles (Watch now, Download, Live TV), app logos, seasonal themes, and vector animation effects. See [`docs/firebase_remote_config.md`](docs/firebase_remote_config.md) for full schema details. |
 | **Firebase Cloud Messaging**  | Background notifications and alerts.                                                                                                                                                |
 | **Firebase In-App Messaging** | Dynamic in-app banners and update notices.                                                                                                                                          |
 | **Firebase Analytics**        | Usage and performance analytics.                                                                                                                                                    |

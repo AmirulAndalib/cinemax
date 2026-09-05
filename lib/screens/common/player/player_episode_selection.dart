@@ -137,7 +137,6 @@ class PlayerEpisodeSelection {
                                   builder: (_) => TVVideoLoader(
                                     download: false,
                                     useTvPlayer: useTvPlayer,
-                                    forceAutoLoad: true,
                                     metadata: TVStreamMetadata(
                                       elapsed: null,
                                       episodeId: episode.episodeId,

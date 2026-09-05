@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:description="@string/widget_my_list_name"
+    android:description="@string/widget_my_list_description"
     android:initialLayout="@layout/flixquest_widget"
     android:minWidth="110dp"
     android:minHeight="172dp"

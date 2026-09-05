@@ -29,6 +29,7 @@ import 'provider/wellness_provider.dart';
 import 'services/in_app_messaging_service.dart';
 import 'services/home_widget_navigation_service.dart';
 import 'services/home_widget_service.dart';
+import 'services/recently_watched_sync_service.dart';
 import 'services/app_session_state_store.dart';
 import 'services/app_remote_config.dart';
 import 'screens/common/downloads_screen.dart';
@@ -106,8 +107,6 @@ class _FlixQuestState extends State<FlixQuest>
     WidgetsBinding.instance.addObserver(this);
     WellnessProvider.instance.addListener(_scheduleLocalWidgetRefresh);
     widget.bookmarkProvider.addListener(_scheduleLocalWidgetRefresh);
-    widget.settingsProvider.addListener(_scheduleLocalWidgetRefresh);
-    widget.appDependencyProvider.addListener(_scheduleLocalWidgetRefresh);
     _initConfig();
     fileDelete();
     InAppMessagingService.initialize();
@@ -123,8 +122,6 @@ class _FlixQuestState extends State<FlixQuest>
       unawaited(HomeWidgetService.instance.refreshLocal(
         wellness: WellnessProvider.instance,
         bookmarks: widget.bookmarkProvider,
-        settings: widget.settingsProvider,
-        dependencies: widget.appDependencyProvider,
       ));
     });
   }
@@ -138,9 +135,15 @@ class _FlixQuestState extends State<FlixQuest>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) return;
+    if (state != AppLifecycleState.resumed) {
+      // Leaving the app is the last chance to hand off progress saved by the
+      // player, so push it now instead of waiting out the debounce.
+      unawaited(RecentlyWatchedSyncService.instance.flushPending());
+      return;
+    }
     HomeWidgetNavigationService.onAppReady();
     unawaited(_refreshHomeWidgets());
+    unawaited(RecentlyWatchedSyncService.instance.autoSyncIfSignedIn());
   }
 
   @override
@@ -148,8 +151,6 @@ class _FlixQuestState extends State<FlixQuest>
     WidgetsBinding.instance.removeObserver(this);
     WellnessProvider.instance.removeListener(_scheduleLocalWidgetRefresh);
     widget.bookmarkProvider.removeListener(_scheduleLocalWidgetRefresh);
-    widget.settingsProvider.removeListener(_scheduleLocalWidgetRefresh);
-    widget.appDependencyProvider.removeListener(_scheduleLocalWidgetRefresh);
     _widgetRefreshDebounce?.cancel();
     _remoteConfigSubscription?.cancel();
     super.dispose();

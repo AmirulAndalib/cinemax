@@ -1,10 +1,41 @@
-# Firebase Remote Config: logos and occasional themes
+# Firebase Remote Config: feature toggles, logos and occasional themes
 
-This file documents every Remote Config value used by the occasional-theme
-system. The theme catalog is intentionally one JSON string so a single publish
-activates a consistent catalog on every client.
+This file documents the Remote Config values used by the feature toggles and by
+the occasional-theme system. The theme catalog is intentionally one JSON string
+so a single publish activates a consistent catalog on every client.
 
-## Remote Config parameters
+## Feature toggles
+
+| Parameter | Firebase type | Default | Purpose |
+| --- | --- | --- | --- |
+| `enable_stream` | Boolean | `true` | Shows every **Watch now** / **Play** affordance. |
+| `enable_download` | Boolean | `true` | Shows every **Download** button for movies and episodes. |
+| `enable_live_tv` | Boolean | `true` | Shows the Live TV shortcuts and the Android TV **Live TV** destination. |
+| `enable_ott` | Boolean | `true` | Legacy Live TV key. Only consulted when `enable_live_tv` has not been published. |
+
+All three toggles are registered as in-app defaults set to `true`, so a failed,
+throttled, or offline fetch never hides playback, downloads, or Live TV. Publish
+`false` to hide a feature.
+
+Turning a toggle off only removes the entry points; it does not delete state.
+With `enable_download` off, the Downloads library and any already-downloaded
+files stay reachable so users can still watch what they have. With
+`enable_stream` off, the Continue watching rows still resume playback.
+
+`enable_live_tv` supersedes `enable_ott`. A remotely published `enable_live_tv`
+always wins; if only `enable_ott` is published, its value is still honoured so
+existing consoles keep working. Publish `enable_live_tv` and retire `enable_ott`
+once every client is on a build that reads the new key.
+
+### What each toggle hides
+
+| Toggle | Surfaces |
+| --- | --- |
+| `enable_stream` | Movie/episode detail **Watch now**, the home hero **Watch now** on both the Movies and TV tabs, the poster-page watch button, the Android TV movie **Play** action and the Android TV episode dialog's **Play episode** action. |
+| `enable_download` | Movie detail **Download** and episode detail **Download**. |
+| `enable_live_tv` | The Live TV shortcut on the handheld Movies and TV tabs and the Android TV shell's **Live TV** rail destination and screen. |
+
+## Logos and themes
 
 | Parameter | Firebase type | Default | Purpose |
 | --- | --- | --- | --- |

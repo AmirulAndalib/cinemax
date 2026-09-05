@@ -40,8 +40,11 @@ class AppDependencyProvider extends ChangeNotifier {
   bool _displayWatchNowButton = true;
   bool get displayWatchNowButton => _displayWatchNowButton;
 
-  bool _displayOTTDrawer = true;
-  bool get displayOTTDrawer => _displayOTTDrawer;
+  bool _displayDownloadButton = true;
+  bool get displayDownloadButton => _displayDownloadButton;
+
+  bool _displayLiveTV = true;
+  bool get displayLiveTV => _displayLiveTV;
 
   bool _isForcedUpdate = false;
   bool get isForcedUpdate => _isForcedUpdate;
@@ -191,8 +194,13 @@ class AppDependencyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  set displayOTTDrawer(bool value) {
-    _displayOTTDrawer = value;
+  set displayDownloadButton(bool value) {
+    _displayDownloadButton = value;
+    notifyListeners();
+  }
+
+  set displayLiveTV(bool value) {
+    _displayLiveTV = value;
     notifyListeners();
   }
 

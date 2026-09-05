@@ -295,6 +295,10 @@ class EpisodeDetailPageState extends State<EpisodeDetailPage>
                         .displayWatchNowButton &&
                     widget.posterPath != null &&
                     widget.tvId != null,
+                canDownload: Provider.of<AppDependencyProvider>(context)
+                        .displayDownloadButton &&
+                    widget.posterPath != null &&
+                    widget.tvId != null,
                 onWatch: _watchNow,
                 onDownload: _download,
                 onShare: () => Share.share(tr('share_episode', namedArgs: {
@@ -406,6 +410,7 @@ class _EpisodeContent extends StatelessWidget {
     required this.credits,
     required this.images,
     required this.canWatch,
+    required this.canDownload,
     required this.onWatch,
     required this.onDownload,
     required this.onShare,
@@ -417,6 +422,7 @@ class _EpisodeContent extends StatelessWidget {
   final Future<Credits> credits;
   final Future<Images> images;
   final bool canWatch;
+  final bool canDownload;
   final VoidCallback onWatch;
   final VoidCallback onDownload;
   final VoidCallback onShare;
@@ -511,8 +517,8 @@ class _EpisodeContent extends StatelessWidget {
                   label: Text(tr('watch_now')),
                 ),
               ),
-            if (canWatch) const SizedBox(width: 12),
-            if (canWatch)
+            if (canWatch && canDownload) const SizedBox(width: 12),
+            if (canDownload)
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: onDownload,

@@ -131,7 +131,6 @@ class _TvProviderPickerDialogState extends State<_TvProviderPickerDialog> {
     VideoProvider provider, {
     required bool autofocus,
   }) {
-    final isDirect = provider.type == VideoProviderType.directVixSrc;
     return TvFocusable(
       semanticLabel: provider.displayName,
       autofocus: autofocus,
@@ -176,11 +175,14 @@ class _TvProviderPickerDialogState extends State<_TvProviderPickerDialog> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    isDirect ? 'Direct provider' : 'Streaming provider',
+                    provider.contentDescription,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: colors.onSurfaceVariant,
                       fontFamily: 'Figtree',
                       fontSize: 17,
+                      height: 1.3,
                     ),
                   ),
                 ],

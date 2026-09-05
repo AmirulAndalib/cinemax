@@ -98,7 +98,7 @@ class _MainMoviesDisplayState extends State<MainMoviesDisplay> {
     bool includeAdult = Provider.of<SettingsProvider>(context).isAdult;
     final lang = Provider.of<SettingsProvider>(context).appLanguage;
     var rMovies = Provider.of<RecentProvider>(context).movies;
-    final showLiveTV = context.watch<AppDependencyProvider>().displayOTTDrawer;
+    final showLiveTV = context.watch<AppDependencyProvider>().displayLiveTV;
     void openLiveTV() {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const ChannelList()),
@@ -374,7 +374,9 @@ class DiscoverMoviesState extends State<DiscoverMovies>
     super.build(context);
     deviceHeight = MediaQuery.of(context).size.height;
     final isProxyEnabled = Provider.of<SettingsProvider>(context).enableProxy;
-    final proxyUrl = Provider.of<AppDependencyProvider>(context).tmdbProxy;
+    final appDependency = Provider.of<AppDependencyProvider>(context);
+    final proxyUrl = appDependency.tmdbProxy;
+    final showWatchNow = appDependency.displayWatchNowButton;
     final heroHeight = (deviceHeight * .48).clamp(410.0, 500.0);
     return SizedBox(
       width: double.infinity,
@@ -511,16 +513,18 @@ class DiscoverMoviesState extends State<DiscoverMovies>
                               const SizedBox(height: 18),
                               Row(
                                 children: [
-                                  FilledButton.icon(
-                                    onPressed: () => _watchMovie(movie),
-                                    icon: Icon(PhosphorIcons.play()),
-                                    label: Text(tr('watch_now')),
-                                    style: FilledButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 18, vertical: 12),
+                                  if (showWatchNow) ...[
+                                    FilledButton.icon(
+                                      onPressed: () => _watchMovie(movie),
+                                      icon: Icon(PhosphorIcons.play()),
+                                      label: Text(tr('watch_now')),
+                                      style: FilledButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 18, vertical: 12),
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
+                                    const SizedBox(width: 12),
+                                  ],
                                   OutlinedButton.icon(
                                     onPressed: () => _toggleBookmark(movie),
                                     icon: Icon(isBookmarked

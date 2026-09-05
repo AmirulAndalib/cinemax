@@ -53,7 +53,6 @@ class PlayerMovieRecommendations {
             builder: (context) => MovieVideoLoader(
               download: false,
               useTvPlayer: useTvPlayer,
-              forceAutoLoad: true,
               metadata: newMetadata,
             ),
           ),

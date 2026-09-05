@@ -5,131 +5,33 @@ import 'package:better_player_plus/better_player_plus.dart';
 import 'package:retry/retry.dart';
 import '../functions/function.dart';
 import '../models/external_subtitles.dart';
+import '../video_providers/scraper_api.dart';
 
+/// Fetches external subtitles through the FlixQuest Scraper API.
+///
+/// Search and file download both go through the scraper: it holds the provider
+/// credentials, normalizes every file to UTF-8 and strips aggregator ads, so
+/// the app never talks to a subtitle source directly.
 class ExternalSubtitleService {
-  static const String baseUrl = 'https://sub.wyzie.io';
-  static const String _wyzieApiKey = 'wyzie-nsh0kw4nuvy923x7ushch8b8c8ar75co';
+  ExternalSubtitleService(this.scraperApiUrl);
 
-  /// Download subtitle file with proper encoding handling
-  static Future<String> _downloadSubtitleWithEncoding(
-      String url, String encoding) async {
-    final retryOptions = RetryOptions(maxAttempts: 3);
-
-    try {
-      var response = await retryOptions.retry(
-        () => http.get(Uri.parse(url)).timeout(const Duration(seconds: 15)),
-        retryIf: (e) => e is SocketException,
-      );
-
-      if (response.statusCode == 200) {
-        final bytes = response.bodyBytes;
-
-        // Try to decode with the specified encoding
-        try {
-          // Handle different encodings
-          Encoding decoder;
-          switch (encoding.toUpperCase()) {
-            case 'UTF-8':
-            case 'UTF8':
-              decoder = utf8;
-              break;
-            case 'LATIN1':
-            case 'ISO-8859-1':
-              decoder = latin1;
-              break;
-            case 'ASCII':
-              decoder = ascii;
-              break;
-            default:
-              // For unsupported encodings like GB18030, CP1252, etc., try UTF-8 first
-              // If it fails, fall back to latin1 which accepts all byte values
-              decoder = utf8;
-              break;
-          }
-
-          String decoded;
-          try {
-            decoded = decoder.decode(bytes);
-          } catch (e) {
-            // If strict decoding fails, manually replace invalid sequences
-            decoded =
-                String.fromCharCodes(bytes.where((b) => b < 128).toList());
-          }
-
-          // Check if the decoded content looks valid (not starting with HTML)
-          if (decoded.startsWith('<')) {
-            return '';
-          }
-
-          return decoded;
-        } catch (e) {
-          // If the specified encoding fails, try latin1 as fallback (accepts all bytes)
-          return latin1.decode(bytes);
-        }
-      } else {
-        throw Exception('HTTP ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Download failed: $e');
-    }
-  }
+  final String scraperApiUrl;
 
   /// Fetch external subtitles for a movie using TMDB ID
-  static Future<List<ExternalSubtitle>> fetchMovieSubtitles(int tmdbId) async {
-    try {
-      final uri = _buildSearchUri({
-        'id': tmdbId.toString(),
-      });
-
-      final response = await http.get(uri);
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => ExternalSubtitle.fromJson(json)).toList();
-      } else {
-        throw Exception(
-          'Failed to load subtitles: ${response.statusCode} ${response.body}',
-        );
-      }
-    } catch (e) {
-      throw Exception('Error fetching subtitles: $e');
-    }
+  Future<List<ExternalSubtitle>> fetchMovieSubtitles(int tmdbId) {
+    return ScraperApi(scraperApiUrl).searchSubtitles(tmdbId: tmdbId);
   }
 
   /// Fetch external subtitles for a TV episode using TMDB ID, season, and episode
-  static Future<List<ExternalSubtitle>> fetchTVSubtitles(
+  Future<List<ExternalSubtitle>> fetchTVSubtitles(
     int tmdbId,
     int seasonNumber,
     int episodeNumber,
-  ) async {
-    try {
-      final uri = _buildSearchUri({
-        'id': tmdbId.toString(),
-        'season': seasonNumber.toString(),
-        'episode': episodeNumber.toString(),
-      });
-
-      final response = await http.get(uri);
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((json) => ExternalSubtitle.fromJson(json)).toList();
-      } else {
-        throw Exception(
-          'Failed to load subtitles: ${response.statusCode} ${response.body}',
-        );
-      }
-    } catch (e) {
-      throw Exception('Error fetching subtitles: $e');
-    }
-  }
-
-  static Uri _buildSearchUri(Map<String, String> queryParameters) {
-    return Uri.parse('$baseUrl/search').replace(
-      queryParameters: {
-        ...queryParameters,
-        'key': _wyzieApiKey,
-      },
+  ) {
+    return ScraperApi(scraperApiUrl).searchSubtitles(
+      tmdbId: tmdbId,
+      season: seasonNumber,
+      episode: episodeNumber,
     );
   }
 
@@ -138,18 +40,13 @@ class ExternalSubtitleService {
     ExternalSubtitle subtitle, {
     int? subtitleNumber,
   }) async {
-    // Download the subtitle file content with proper encoding
-    final subtitleContent = await _downloadSubtitleWithEncoding(
-      subtitle.url,
-      subtitle.encoding,
-    );
+    final subtitleContent = await _downloadSubtitle(subtitle.url);
 
-    // Process the content based on format
-    String processedContent = subtitleContent;
-    if (!subtitle.url.endsWith('srt') && subtitleContent.isNotEmpty) {
-      // If it's VTT or other format, process timestamps
-      processedContent = processVttFileTimestamps(subtitleContent);
-    }
+    // The API serves WebVTT and SubRip; only WebVTT timestamps need fixing.
+    final processedContent =
+        subtitleContent.isEmpty || subtitle.format.toLowerCase() == 'srt'
+            ? subtitleContent
+            : processVttFileTimestamps(subtitleContent);
 
     // Create a unique name for the subtitle
     String subtitleName = subtitle.display;
@@ -166,5 +63,28 @@ class ExternalSubtitleService {
       content: processedContent,
       selectedByDefault: false,
     );
+  }
+
+  /// Downloads a subtitle file from the API, which always answers in UTF-8, so
+  /// malformed bytes are replaced instead of probed for a code page.
+  static Future<String> _downloadSubtitle(String url) async {
+    final retryOptions = RetryOptions(maxAttempts: 3);
+
+    try {
+      final response = await retryOptions.retry(
+        () => http.get(Uri.parse(url)).timeout(const Duration(seconds: 20)),
+        retryIf: (e) => e is SocketException,
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+
+      final decoded = utf8.decode(response.bodyBytes, allowMalformed: true);
+      // An error page is never a subtitle file.
+      return decoded.trimLeft().startsWith('<') ? '' : decoded;
+    } catch (e) {
+      throw Exception('Download failed: $e');
+    }
   }
 }

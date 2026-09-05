@@ -13,6 +13,7 @@ import '../../models/movie_stream_metadata.dart';
 import '../../models/tv_stream_metadata.dart';
 import '../../models/wellness.dart';
 import '../../constants/app_constants.dart';
+import '../../provider/app_dependency_provider.dart';
 import '../../provider/settings_provider.dart';
 import '../../provider/wellness_provider.dart';
 import 'player/player_external_subtitles.dart';
@@ -258,6 +259,8 @@ class _OfflinePlayerScreenState extends State<OfflinePlayerScreen> {
         Theme.of(context).primaryColor,
         Theme.of(context).colorScheme.surface
       ],
+      scraperApiUrl: Provider.of<AppDependencyProvider>(context, listen: false)
+          .flixquestAPIURL,
       mediaType: isMovie ? MediaType.movie : MediaType.tvShow,
       movieMetadata: isMovie
           ? MovieStreamMetadata(

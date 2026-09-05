@@ -560,7 +560,6 @@ abstract class  LocaleKeys {
   static const subtitles_selected = 'subtitles_selected';
   static const apply = 'apply';
   static const refresh = 'refresh';
-  static const subtitle_source = 'subtitle_source';
   static const failed_load_subtitles = 'failed_load_subtitles';
   static const downloading_processing_subtitles = 'downloading_processing_subtitles';
   static const added_external_subtitles = 'added_external_subtitles';

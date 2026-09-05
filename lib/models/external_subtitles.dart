@@ -1,3 +1,8 @@
+/// One subtitle track offered by the FlixQuest Scraper API.
+///
+/// Which upstream provider found the track is deliberately not modelled: the
+/// app asks the API for subtitles and follows the [url] it hands back, so
+/// provider identity stays behind the API.
 class ExternalSubtitle {
   final String id;
   final String url;
@@ -8,7 +13,9 @@ class ExternalSubtitle {
   final String language;
   final String media;
   final bool isHearingImpaired;
-  final String source;
+
+  /// Release the track was timed against, or empty when unknown.
+  final String release;
 
   ExternalSubtitle({
     required this.id,
@@ -20,7 +27,7 @@ class ExternalSubtitle {
     required this.language,
     required this.media,
     required this.isHearingImpaired,
-    required this.source,
+    required this.release,
   });
 
   factory ExternalSubtitle.fromJson(Map<String, dynamic> json) {
@@ -34,7 +41,7 @@ class ExternalSubtitle {
       language: json['language'] ?? 'en',
       media: json['media'] ?? '',
       isHearingImpaired: json['isHearingImpaired'] ?? false,
-      source: json['source'] ?? 'opensubtitles',
+      release: json['release'] ?? '',
     );
   }
 
