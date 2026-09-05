@@ -49,6 +49,8 @@ import 'package:provider/provider.dart';
 import 'categorized_feed.dart';
 import 'common_widgets.dart';
 import 'app_logo.dart';
+import '../video_providers/scraper_api.dart';
+import 'hosted_ads_banner.dart';
 
 class MainMoviesDisplay extends StatefulWidget {
   const MainMoviesDisplay({
@@ -122,6 +124,12 @@ class _MainMoviesDisplayState extends State<MainMoviesDisplay> {
             SliverList(
               delegate: SliverChildListDelegate.fixed([
                 const UpdateBottom(),
+                RemoteHostedAdsBanner(
+                  placement: 'home_movies',
+                  loadAds: () => ScraperApi(
+                    context.read<AppDependencyProvider>().flixquestAPIURL,
+                  ).getAds(),
+                ),
                 ScrollingMovies(
                   title: tr('popular'),
                   api: Endpoints.popularMoviesUrl(lang),
@@ -138,6 +146,12 @@ class _MainMoviesDisplayState extends State<MainMoviesDisplay> {
                   discoverType: 'Trending',
                   isTrending: true,
                   includeAdult: includeAdult,
+                ),
+                RemoteHostedAdsBanner(
+                  placement: 'home_movies',
+                  loadAds: () => ScraperApi(
+                    context.read<AppDependencyProvider>().flixquestAPIURL,
+                  ).getAds(),
                 ),
                 ScrollingMovies(
                   title: tr('top_rated'),
@@ -161,6 +175,12 @@ class _MainMoviesDisplayState extends State<MainMoviesDisplay> {
                   includeAdult: includeAdult,
                 ),
                 GenreListGrid(api: Endpoints.movieGenresUrl(lang)),
+                RemoteHostedAdsBanner(
+                  placement: 'home_movies',
+                  loadAds: () => ScraperApi(
+                    context.read<AppDependencyProvider>().flixquestAPIURL,
+                  ).getAds(),
+                ),
                 const RandomCategorizedFeed(isTv: false),
                 const MoviesFromWatchProviders(),
               ]),

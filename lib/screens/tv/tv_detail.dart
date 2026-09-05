@@ -32,6 +32,8 @@ import '../person/cast_detail.dart';
 import 'genre_tv.dart';
 import 'seasons_detail.dart';
 import 'tvdetail_castandcrew.dart';
+import '../../video_providers/scraper_api.dart';
+import '../../widgets/hosted_ads_banner.dart';
 
 class TVDetailPage extends StatefulWidget {
   final TV tvSeries;
@@ -223,6 +225,14 @@ class TVDetailPageState extends State<TVDetailPage>
                 ),
                 onRetry: () => setState(_loadData),
               ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: RemoteHostedAdsBanner(
+              placement: 'tv_detail',
+              loadAds: () => ScraperApi(
+                context.read<AppDependencyProvider>().flixquestAPIURL,
+              ).getAds(),
             ),
           ),
           SliverPersistentHeader(

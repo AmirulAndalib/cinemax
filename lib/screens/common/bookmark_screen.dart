@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../constants/app_constants.dart';
 import '../../provider/bookmark_provider.dart';
+import '../../provider/app_dependency_provider.dart';
 import '../../services/bookmark_sync_service.dart';
 import '../../services/globle_method.dart';
 import '../../ui_components/app_ui_components.dart';
@@ -13,6 +14,8 @@ import '../movie/bookmark_movies_tab.dart';
 import '../tv/bookmark_tv_tab.dart';
 import '/screens/common/sync_screen.dart';
 import '../../widgets/app_logo.dart';
+import '../../video_providers/scraper_api.dart';
+import '../../widgets/hosted_ads_banner.dart';
 
 class BookmarkScreen extends StatefulWidget {
   const BookmarkScreen({this.embedded = false, super.key});
@@ -164,6 +167,12 @@ class _BookmarkScreenState extends State<BookmarkScreen>
               ),
             ),
             const SizedBox(height: 4),
+            RemoteHostedAdsBanner(
+              placement: 'bookmarks',
+              loadAds: () => ScraperApi(
+                context.read<AppDependencyProvider>().flixquestAPIURL,
+              ).getAds(),
+            ),
             Expanded(
               child: TabBarView(
                 controller: tabController,

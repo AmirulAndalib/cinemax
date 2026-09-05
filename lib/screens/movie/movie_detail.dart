@@ -34,6 +34,8 @@ import 'collection_detail.dart';
 import 'genremovies.dart';
 import 'movie_castandcrew.dart';
 import 'movie_video_loader.dart';
+import '../../video_providers/scraper_api.dart';
+import '../../widgets/hosted_ads_banner.dart';
 
 class MovieDetailPage extends StatefulWidget {
   const MovieDetailPage({
@@ -425,6 +427,14 @@ class MovieDetailPageState extends State<MovieDetailPage>
                 onRetryGenres: () => setState(_loadPageData),
                 onRetryCredits: () => setState(_loadPageData),
               ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: RemoteHostedAdsBanner(
+              placement: 'movie_detail',
+              loadAds: () => ScraperApi(
+                context.read<AppDependencyProvider>().flixquestAPIURL,
+              ).getAds(),
             ),
           ),
           SliverPersistentHeader(

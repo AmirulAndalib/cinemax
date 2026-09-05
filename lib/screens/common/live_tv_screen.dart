@@ -14,6 +14,8 @@ import '../../services/daddylive_service.dart';
 import '../../services/analytics_service.dart';
 import '../../ui_components/app_ui_components.dart';
 import 'live_player.dart';
+import '../../video_providers/scraper_api.dart';
+import '../../widgets/hosted_ads_banner.dart';
 
 enum _ChannelScope { all, favorites, recent }
 
@@ -396,6 +398,14 @@ class _ChannelListState extends State<ChannelList> {
       child: CustomScrollView(
         slivers: <Widget>[
           SliverToBoxAdapter(child: _buildHeader()),
+          SliverToBoxAdapter(
+            child: RemoteHostedAdsBanner(
+              placement: 'live_tv',
+              loadAds: () => ScraperApi(
+                context.read<AppDependencyProvider>().flixquestAPIURL,
+              ).getAds(),
+            ),
+          ),
           if (_mode == _LiveTvMode.channels)
             ..._buildChannelSlivers()
           else

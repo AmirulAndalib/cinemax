@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/external_subtitles.dart';
+import '../models/banner_ad.dart';
 import 'common.dart';
 import 'names.dart';
 
@@ -52,6 +53,29 @@ class ScraperApi {
           )
           .where((provider) => provider.apiId?.isNotEmpty == true)
           .toList(growable: false);
+    } finally {
+      if (_ownsClient) _client.close();
+    }
+  }
+
+  Future<List<BannerAd>> getAds() async {
+    try {
+      final uri = _endpoint('/ads');
+      final response = await _get(uri, timeout: const Duration(seconds: 10));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return const [];
+      }
+      _logRequest(uri);
+      _logResponse(uri, response);
+      final body = _decodeObject(response.body);
+      if (body['success'] != true || body['ads'] is! List) return const [];
+      return (body['ads'] as List)
+          .whereType<Map>()
+          .map((ad) => BannerAd.fromJson(Map<String, dynamic>.from(ad)))
+          .where((ad) => ad.imageUrl.isNotEmpty && ad.targetUrl.isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
     } finally {
       if (_ownsClient) _client.close();
     }

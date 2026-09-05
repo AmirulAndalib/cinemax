@@ -57,6 +57,8 @@ import 'movie_widgets.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '/widgets/common_widgets.dart';
 import 'app_logo.dart';
+import '../video_providers/scraper_api.dart';
+import 'hosted_ads_banner.dart';
 
 class MainTVDisplay extends StatefulWidget {
   const MainTVDisplay({
@@ -128,6 +130,12 @@ class _MainTVDisplayState extends State<MainTVDisplay> {
             ),
             SliverList(
               delegate: SliverChildListDelegate.fixed([
+                RemoteHostedAdsBanner(
+                  placement: 'home_tv',
+                  loadAds: () => ScraperApi(
+                    context.read<AppDependencyProvider>().flixquestAPIURL,
+                  ).getAds(),
+                ),
                 ScrollingTV(
                   includeAdult: Provider.of<SettingsProvider>(context).isAdult,
                   title: tr('popular'),
@@ -144,6 +152,12 @@ class _MainTVDisplayState extends State<MainTVDisplay> {
                   api: Endpoints.trendingTVUrl(lang),
                   discoverType: 'trending',
                   isTrending: true,
+                ),
+                RemoteHostedAdsBanner(
+                  placement: 'home_tv',
+                  loadAds: () => ScraperApi(
+                    context.read<AppDependencyProvider>().flixquestAPIURL,
+                  ).getAds(),
                 ),
                 ScrollingTV(
                   includeAdult: Provider.of<SettingsProvider>(context).isAdult,
@@ -167,6 +181,12 @@ class _MainTVDisplayState extends State<MainTVDisplay> {
                   isTrending: false,
                 ),
                 TVGenreListGrid(api: Endpoints.tvGenresUrl(lang)),
+                RemoteHostedAdsBanner(
+                  placement: 'home_tv',
+                  loadAds: () => ScraperApi(
+                    context.read<AppDependencyProvider>().flixquestAPIURL,
+                  ).getAds(),
+                ),
                 const RandomCategorizedFeed(isTv: true),
                 const TVShowsFromWatchProviders(),
               ]),

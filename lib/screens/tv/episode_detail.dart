@@ -25,6 +25,8 @@ import '../../models/tv_stream_metadata.dart';
 import '../../services/globle_method.dart';
 import '../../services/ambient_theme_service.dart';
 import 'tv_video_loader.dart';
+import '../../video_providers/scraper_api.dart';
+import '../../widgets/hosted_ads_banner.dart';
 
 class EpisodeDetailPage extends StatefulWidget {
   final EpisodeList episodeList;
@@ -312,7 +314,15 @@ class EpisodeDetailPageState extends State<EpisodeDetailPage>
                 })),
               ),
             ),
-          )
+          ),
+          SliverToBoxAdapter(
+            child: RemoteHostedAdsBanner(
+              placement: 'episode_detail',
+              loadAds: () => ScraperApi(
+                context.read<AppDependencyProvider>().flixquestAPIURL,
+              ).getAds(),
+            ),
+          ),
         ],
       ),
     );

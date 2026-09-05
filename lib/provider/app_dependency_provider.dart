@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../constants/api_constants.dart';
 import '../models/occasional_theme.dart';
+import '../models/banner_ad.dart';
 import '../preferences/app_dependency_preferences.dart';
 
 class AppDependencyProvider extends ChangeNotifier {
@@ -17,8 +18,9 @@ class AppDependencyProvider extends ChangeNotifier {
       List<String>.unmodifiable(_flixquestApiInstances);
 
   String _flixquestAPIUrl = flixquestApiUrl;
-  String get configuredFlixquestAPIURL =>
-      _flixquestAPIUrl.trim().isNotEmpty ? _flixquestAPIUrl.trim() : flixquestApiUrl;
+  String get configuredFlixquestAPIURL => _flixquestAPIUrl.trim().isNotEmpty
+      ? _flixquestAPIUrl.trim()
+      : flixquestApiUrl;
   String get flixquestAPIURLV2 => configuredFlixquestAPIURL;
 
   String get flixquestAPIURL {
@@ -45,6 +47,21 @@ class AppDependencyProvider extends ChangeNotifier {
 
   bool _displayLiveTV = true;
   bool get displayLiveTV => _displayLiveTV;
+
+  Map<String, BannerDisplayConfig> _bannerConfigs = const {};
+
+  BannerDisplayConfig bannerConfigFor(String key) =>
+      _bannerConfigs[key] ?? BannerDisplayConfig(key: key);
+
+  bool isBannerEnabled(String key, String placement) {
+    final config = bannerConfigFor(key);
+    return config.enabled && config.appliesTo(placement);
+  }
+
+  void setBannerConfigs(Map<String, BannerDisplayConfig> configs) {
+    _bannerConfigs = Map.unmodifiable(configs);
+    notifyListeners();
+  }
 
   bool _isForcedUpdate = false;
   bool get isForcedUpdate => _isForcedUpdate;
@@ -164,8 +181,7 @@ class AppDependencyProvider extends ChangeNotifier {
       }
     }
     if (url != null) {
-      final normalizedUrl =
-          url.trim().isEmpty ? flixquestApiUrl : url.trim();
+      final normalizedUrl = url.trim().isEmpty ? flixquestApiUrl : url.trim();
       if (_flixquestAPIUrl != normalizedUrl) {
         _flixquestAPIUrl = normalizedUrl;
         _preferences.setFlixquestAPIUrl(normalizedUrl);

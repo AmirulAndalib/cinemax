@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 
+import '../models/banner_ad.dart';
 import '../provider/app_dependency_provider.dart';
 
 class AppRemoteConfig {
@@ -15,6 +16,7 @@ class AppRemoteConfig {
   static const enableWatchNowKey = 'enable_stream';
   static const enableDownloadKey = 'enable_download';
   static const enableLiveTvKey = 'enable_live_tv';
+  static const bannersKey = 'banners';
 
   /// Live TV used to ride on the OTT flag before it got a dedicated key.
   static const legacyEnableLiveTvKey = 'enable_ott';
@@ -44,6 +46,7 @@ class AppRemoteConfig {
       enableDownloadKey: true,
       enableLiveTvKey: true,
       legacyEnableLiveTvKey: true,
+      bannersKey: '{"banners":[]}',
     });
   }
 
@@ -95,6 +98,8 @@ class AppRemoteConfig {
     provider.displayWatchNowButton = remoteConfig.getBool(enableWatchNowKey);
     provider.displayDownloadButton = remoteConfig.getBool(enableDownloadKey);
     provider.displayLiveTV = _resolveLiveTv(remoteConfig);
+    provider.setBannerConfigs(
+        parseBannerConfigs(remoteConfig.getString(bannersKey)));
 
     final instancesRaw = remoteConfig.getString(flixquestApiInstancesKey);
     final parsedInstances = parseApiInstances(instancesRaw);
@@ -113,6 +118,41 @@ class AppRemoteConfig {
       changeLog: remoteConfig.getString('change_log'),
     );
     provider.tmdbProxy = remoteConfig.getString('tmdb_proxy');
+  }
+
+  static Map<String, BannerDisplayConfig> parseBannerConfigs(String rawJson) {
+    final trimmed = rawJson.trim();
+    if (trimmed.isEmpty) return const {};
+    try {
+      final decoded = jsonDecode(trimmed);
+      final rawBanners =
+          decoded is Map<String, dynamic> ? decoded['banners'] : decoded;
+      final configs = <String, BannerDisplayConfig>{};
+      if (rawBanners is List) {
+        for (final item in rawBanners.whereType<Map>()) {
+          for (final entry in item.entries) {
+            if (entry.value is Map) {
+              configs[entry.key.toString()] = BannerDisplayConfig.fromJson(
+                entry.key.toString(),
+                Map<String, dynamic>.from(entry.value as Map),
+              );
+            }
+          }
+        }
+      } else if (rawBanners is Map) {
+        for (final entry in rawBanners.entries) {
+          if (entry.value is Map) {
+            configs[entry.key.toString()] = BannerDisplayConfig.fromJson(
+              entry.key.toString(),
+              Map<String, dynamic>.from(entry.value as Map),
+            );
+          }
+        }
+      }
+      return configs;
+    } catch (_) {
+      return const {};
+    }
   }
 
   /// Resolves the Live TV toggle, preferring [enableLiveTvKey] and falling back

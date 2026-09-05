@@ -23,6 +23,8 @@ import '../../services/ambient_theme_service.dart';
 import 'episode_detail.dart';
 import 'tvseason_castandcrew.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../video_providers/scraper_api.dart';
+import '../../widgets/hosted_ads_banner.dart';
 
 class SeasonsDetail extends StatefulWidget {
   final Seasons seasons;
@@ -172,6 +174,14 @@ class SeasonsDetailState extends State<SeasonsDetail>
                 videos: _videos,
                 onRetry: () => setState(_loadData),
               ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: RemoteHostedAdsBanner(
+              placement: 'season_detail',
+              loadAds: () => ScraperApi(
+                context.read<AppDependencyProvider>().flixquestAPIURL,
+              ).getAds(),
             ),
           ),
         ],
@@ -697,10 +707,8 @@ class _EpisodeDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         height: 1,
-        color: Theme.of(context)
-            .colorScheme
-            .outlineVariant
-            .withValues(alpha: .45),
+        color:
+            Theme.of(context).colorScheme.outlineVariant.withValues(alpha: .45),
       );
 }
 
