@@ -20,7 +20,6 @@ import 'provider/settings_provider.dart';
 import 'provider/wellness_provider.dart';
 import 'services/bookmark_sync_service.dart';
 import 'services/recently_watched_sync_service.dart';
-import 'services/home_widget_navigation_service.dart';
 import 'services/media_link_navigation_service.dart';
 import 'singleton/sharedpreferences_singleton.dart';
 import 'tv/platform/device_presentation.dart';
@@ -143,7 +142,6 @@ Future<DevicePresentation> appInitialize({
 
 void main() async {
   final devicePresentation = await appInitialize();
-  await HomeWidgetNavigationService.initialize();
   await MediaLinkNavigationService.initialize();
   HttpOverrides.global = MyHttpOverrides();
   runApp(EasyLocalization(
@@ -157,7 +155,6 @@ void main() async {
       bookmarkProvider: bookmarkProvider,
       appDependencyProvider: appDependencyProvider,
       devicePresentation: devicePresentation,
-      init: _initialization,
     ),
   ));
 }

@@ -120,7 +120,7 @@ FLIXQUEST_API_URL="https://your-flixquest-api-instance.com"
 MIXPANEL_API_KEY="your_mixpanel_api_key"
 ```
 
-### Obtaining API Keys:
+### Obtaining API Keys
 
 - **TMDB API Key**: Register at [The Movie Database (TMDB)](https://developer.themoviedb.org/v3/reference/intro/authentication#api-key-quick-start) to get your free API key.
 - **FlixQuest Scraper API**: The scraper service is closed-source. For API access, self-hosting inquiries, or support, please reach out to [flixquestapp@gmail.com](mailto:flixquestapp@gmail.com).
@@ -151,14 +151,14 @@ Key endpoints consumed by the app:
 
 FlixQuest uses Firebase for several services:
 
-| Service                       | Purpose                                                                                                                                                                             |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Firebase Authentication**   | User authentication, profile management, and session handling.                                                                                                                      |
-| **Cloud Firestore**           | Cloud bookmark synchronization across multiple devices.                                                                                                                             |
+| Service                       | Purpose                                                                                                                                                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Firebase Authentication**   | User authentication, profile management, and session handling.                                                                                                                                                                      |
+| **Cloud Firestore**           | Cloud bookmark synchronization across multiple devices.                                                                                                                                                                             |
 | **Firebase Remote Config**    | Dynamic configuration for feature toggles (Watch now, Download, Live TV), app logos, seasonal themes, and vector animation effects. See [`docs/firebase_remote_config.md`](docs/firebase_remote_config.md) for full schema details. |
-| **Firebase Cloud Messaging**  | Background notifications and alerts.                                                                                                                                                |
-| **Firebase In-App Messaging** | Dynamic in-app banners and update notices.                                                                                                                                          |
-| **Firebase Analytics**        | Usage and performance analytics.                                                                                                                                                    |
+| **Firebase Cloud Messaging**  | Background notifications and alerts.                                                                                                                                                                                                |
+| **Firebase In-App Messaging** | Dynamic in-app banners and update notices.                                                                                                                                                                                          |
+| **Firebase Analytics**        | Usage and performance analytics.                                                                                                                                                                                                    |
 
 > **Note**: To connect to your own Firebase project, place your `google-services.json` inside `android/app/`.
 
@@ -225,15 +225,19 @@ better_player_plus:
 
 5. **Run the Application**:
    - For Android Mobile / Tablet:
+
      ```bash
      flutter run
      ```
+
    - For Android TV (Emulator or connected TV device):
+
      ```bash
      flutter run -d <tv-device-id>
      ```
 
 6. **Build Release APK**:
+
    ```bash
    flutter build apk --release
    ```
@@ -245,10 +249,12 @@ better_player_plus:
 Contributions, feature suggestions, design ideas, and translations are always welcome!
 
 - **Pull Requests**: Please ensure your code passes static analysis and is properly formatted:
+
   ```bash
   dart format .
   flutter test
   ```
+
 - **Issue Reports**: Please follow the provided issue templates when opening bugs or feature requests.
 
 ---

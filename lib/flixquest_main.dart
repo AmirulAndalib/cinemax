@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flixquest/models/app_colors.dart';
 import 'package:flutter/material.dart';
@@ -28,6 +27,7 @@ import 'provider/offline_download_provider.dart';
 import 'provider/wellness_provider.dart';
 import 'services/in_app_messaging_service.dart';
 import 'services/deep_link_dispatcher.dart';
+import 'services/home_widget_navigation_service.dart';
 import 'services/home_widget_service.dart';
 import 'services/recently_watched_sync_service.dart';
 import 'services/app_session_state_store.dart';
@@ -42,7 +42,6 @@ class FlixQuest extends StatefulWidget {
       required this.bookmarkProvider,
       required this.appDependencyProvider,
       required this.devicePresentation,
-      required this.init,
       super.key});
 
   final SettingsProvider settingsProvider;
@@ -50,7 +49,6 @@ class FlixQuest extends StatefulWidget {
   final BookmarkProvider bookmarkProvider;
   final AppDependencyProvider appDependencyProvider;
   final DevicePresentation devicePresentation;
-  final Future<FirebaseApp> init;
 
   @override
   State<FlixQuest> createState() => _FlixQuestState();
@@ -110,6 +108,9 @@ class _FlixQuestState extends State<FlixQuest>
     _initConfig();
     fileDelete();
     InAppMessagingService.initialize();
+    // Read widget launch intents after the Flutter engine is attached. The service queues
+    // the initial target until this app has a navigator to receive it.
+    unawaited(HomeWidgetNavigationService.initialize());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       DeepLinkDispatcher.onAppReady();
       unawaited(_refreshHomeWidgets());
@@ -163,124 +164,95 @@ class _FlixQuestState extends State<FlixQuest>
     //       ? DeviceOrientation.landscapeLeft
     //       : DeviceOrientation.portraitUp,
     // ]);
-    return FutureBuilder(
-        future: widget.init,
-        builder: (
-          context,
-          snapshot,
-        ) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const MaterialApp(
-              restorationScopeId: 'flixquest',
-              debugShowCheckedModeBanner: false,
-              home: Scaffold(
-                body: Center(
-                  child: CircularProgressIndicator(),
-                ),
-              ),
-            );
-          } else if (snapshot.hasError) {
-            MaterialApp(
-              debugShowCheckedModeBanner: true,
-              home: Scaffold(
-                body: Center(
-                  child: Text(tr('error_occured')),
-                ),
-              ),
-            );
-          }
-          return MultiProvider(
-              providers: [
-                ChangeNotifierProvider(create: (_) {
-                  return widget.settingsProvider;
-                }),
-                ChangeNotifierProvider(create: (_) {
-                  return widget.recentProvider;
-                }),
-                ChangeNotifierProvider(create: (_) {
-                  return widget.bookmarkProvider;
-                }),
-                ChangeNotifierProvider(create: (_) {
-                  return widget.appDependencyProvider;
-                }),
-                ChangeNotifierProvider(
-                  create: (_) => OfflineDownloadProvider()..initialize(),
-                ),
-                ChangeNotifierProvider.value(value: WellnessProvider.instance),
-              ],
-              child: Consumer3<SettingsProvider, RecentProvider,
-                      AppDependencyProvider>(
-                  builder: (context, settingsProvider, recentProvider,
-                      appDependencyProvider, snapshot) {
-                return DynamicColorBuilder(
-                  builder: (lightDynamic, darkDynamic) {
-                    final isDarkTheme = settingsProvider.appTheme == 'dark' ||
-                        settingsProvider.appTheme == 'amoled';
-                    final palette = AppColorsList().appColors(
-                      isDarkTheme,
-                      customColor: settingsProvider.customAppColor > 0
-                          ? settingsProvider.customAppColor
-                          : null,
-                    );
-                    final selectedAppColor = palette.firstWhere(
-                      (color) => color.index == settingsProvider.appColorIndex,
-                      orElse: () => palette.first,
-                    );
-                    final appTheme = Styles.themeData(
-                      appThemeMode: settingsProvider.appTheme,
-                      isM3Enabled: settingsProvider.isMaterial3Enabled,
-                      lightDynamicColor: lightDynamic,
-                      darkDynamicColor: darkDynamic,
-                      context: context,
-                      appColor: selectedAppColor,
-                      occasionalTheme:
-                          appDependencyProvider.activeOccasionalTheme,
-                      ambientColor: appDependencyProvider.activeAmbientColor,
-                    );
-                    unawaited(
-                      HomeWidgetService.instance.syncResolvedTheme(appTheme),
-                    );
-                    return MaterialApp(
-                      restorationScopeId: 'flixquest',
-                      navigatorKey: InAppMessagingService.navigatorKey,
-                      localizationsDelegates: context.localizationDelegates,
-                      supportedLocales: context.supportedLocales,
-                      locale: context.locale,
-                      debugShowCheckedModeBanner: false,
-                      builder: (context, child) =>
-                          AnnotatedRegion<SystemUiOverlayStyle>(
-                        value: SystemUiOverlayStyle(
-                          systemNavigationBarColor: Colors.transparent,
-                          systemNavigationBarDividerColor: Colors.transparent,
-                          systemNavigationBarIconBrightness:
-                              isDarkTheme ? Brightness.light : Brightness.dark,
-                          systemNavigationBarContrastEnforced: false,
-                        ),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            child ?? const SizedBox.shrink(),
-                            OccasionalEffectOverlay(
-                              theme:
-                                  appDependencyProvider.activeOccasionalTheme,
-                              enabled: appDependencyProvider
-                                  .shouldShowOccasionalEffects,
-                              visibilityListenable: appDependencyProvider,
-                              visibilityResolver: () => appDependencyProvider
-                                  .shouldShowOccasionalEffects,
-                            ),
-                          ],
-                        ),
+    return MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) {
+            return widget.settingsProvider;
+          }),
+          ChangeNotifierProvider(create: (_) {
+            return widget.recentProvider;
+          }),
+          ChangeNotifierProvider(create: (_) {
+            return widget.bookmarkProvider;
+          }),
+          ChangeNotifierProvider(create: (_) {
+            return widget.appDependencyProvider;
+          }),
+          ChangeNotifierProvider(
+            create: (_) => OfflineDownloadProvider()..initialize(),
+          ),
+          ChangeNotifierProvider.value(value: WellnessProvider.instance),
+        ],
+        child:
+            Consumer3<SettingsProvider, RecentProvider, AppDependencyProvider>(
+                builder: (context, settingsProvider, recentProvider,
+                    appDependencyProvider, snapshot) {
+          return DynamicColorBuilder(
+            builder: (lightDynamic, darkDynamic) {
+              final isDarkTheme = settingsProvider.appTheme == 'dark' ||
+                  settingsProvider.appTheme == 'amoled';
+              final palette = AppColorsList().appColors(
+                isDarkTheme,
+                customColor: settingsProvider.customAppColor > 0
+                    ? settingsProvider.customAppColor
+                    : null,
+              );
+              final selectedAppColor = palette.firstWhere(
+                (color) => color.index == settingsProvider.appColorIndex,
+                orElse: () => palette.first,
+              );
+              final appTheme = Styles.themeData(
+                appThemeMode: settingsProvider.appTheme,
+                isM3Enabled: settingsProvider.isMaterial3Enabled,
+                lightDynamicColor: lightDynamic,
+                darkDynamicColor: darkDynamic,
+                context: context,
+                appColor: selectedAppColor,
+                occasionalTheme: appDependencyProvider.activeOccasionalTheme,
+                ambientColor: appDependencyProvider.activeAmbientColor,
+              );
+              unawaited(
+                HomeWidgetService.instance.syncResolvedTheme(appTheme),
+              );
+              return MaterialApp(
+                restorationScopeId: 'flixquest',
+                navigatorKey: InAppMessagingService.navigatorKey,
+                localizationsDelegates: context.localizationDelegates,
+                supportedLocales: context.supportedLocales,
+                locale: context.locale,
+                debugShowCheckedModeBanner: false,
+                builder: (context, child) =>
+                    AnnotatedRegion<SystemUiOverlayStyle>(
+                  value: SystemUiOverlayStyle(
+                    systemNavigationBarColor: Colors.transparent,
+                    systemNavigationBarDividerColor: Colors.transparent,
+                    systemNavigationBarIconBrightness:
+                        isDarkTheme ? Brightness.light : Brightness.dark,
+                    systemNavigationBarContrastEnforced: false,
+                  ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      child ?? const SizedBox.shrink(),
+                      OccasionalEffectOverlay(
+                        theme: appDependencyProvider.activeOccasionalTheme,
+                        enabled:
+                            appDependencyProvider.shouldShowOccasionalEffects,
+                        visibilityListenable: appDependencyProvider,
+                        visibilityResolver: () =>
+                            appDependencyProvider.shouldShowOccasionalEffects,
                       ),
-                      theme: appTheme,
-                      home: UserState(
-                        devicePresentation: widget.devicePresentation,
-                      ),
-                    );
-                  },
-                );
-              }));
-        });
+                    ],
+                  ),
+                ),
+                theme: appTheme,
+                home: UserState(
+                  devicePresentation: widget.devicePresentation,
+                ),
+              );
+            },
+          );
+        }));
   }
 }
 

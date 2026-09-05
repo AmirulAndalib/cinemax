@@ -293,7 +293,7 @@ class _WellnessScreenState extends State<WellnessScreen> {
       if (!mounted) return;
       sectionContext = key.currentContext;
     }
-    if (sectionContext == null) return;
+    if (sectionContext == null || !sectionContext.mounted) return;
     Scrollable.ensureVisible(
       sectionContext,
       duration: const Duration(milliseconds: 420),
@@ -2234,9 +2234,8 @@ class _MediaBreakdownState extends State<_MediaBreakdown> {
     ];
     final total = entries.fold<int>(0, (sum, entry) => sum + entry.$2);
     final selected = _selected;
-    final centerLabel = selected == null
-        ? _duration(total)
-        : _duration(entries[selected].$2);
+    final centerLabel =
+        selected == null ? _duration(total) : _duration(entries[selected].$2);
     final centerCaption = selected == null
         ? 'total playback'
         : '${entries[selected].$1} · ${_share(entries[selected].$2, total)}';
@@ -2854,8 +2853,9 @@ class _TimelinePanelState extends State<_TimelinePanel> {
     final theme = Theme.of(context);
     final surface = _insightSurface(context);
     final series = WellnessTimeSeries.forRange(widget.insights, widget.range);
-    final selected =
-        _selected != null && _selected! < series.buckets.length ? _selected : null;
+    final selected = _selected != null && _selected! < series.buckets.length
+        ? _selected
+        : null;
     final busiest = series.indexOfBusiest();
     return _Panel(
       child: Column(
@@ -2902,8 +2902,7 @@ class _TimelinePanelState extends State<_TimelinePanel> {
             onSelected: (index) => setState(() => _selected = index),
             averageMs: series.averageMs,
             surfaceColor: surface,
-            semanticsLabel:
-                'Watch time by ${series.unitLabel}. Total '
+            semanticsLabel: 'Watch time by ${series.unitLabel}. Total '
                 '${_duration(series.totalMs)} across ${series.activeBuckets} '
                 'active ${series.unitLabel}s.',
           ),
@@ -2924,9 +2923,7 @@ class _TimelinePanelState extends State<_TimelinePanel> {
             child: TextButton.icon(
               onPressed: () => setState(() => _showTable = !_showTable),
               icon: Icon(
-                _showTable
-                    ? PhosphorIcons.caretUp()
-                    : PhosphorIcons.table(),
+                _showTable ? PhosphorIcons.caretUp() : PhosphorIcons.table(),
                 size: 16,
               ),
               label: Text(_showTable ? 'Hide values' : 'All values'),
@@ -3264,8 +3261,7 @@ class _ConsistencyPanel extends StatelessWidget {
         .subtract(const Duration(days: 13));
     final recent = List<int>.generate(
       14,
-      (index) =>
-          insights.dailyWatchedMs[start.add(Duration(days: index))] ?? 0,
+      (index) => insights.dailyWatchedMs[start.add(Duration(days: index))] ?? 0,
       growable: false,
     );
     final recentActive = recent.where((value) => value > 0).length;
