@@ -37,7 +37,7 @@ class SettingsProvider with ChangeNotifier {
   // int _defaultMinBufferDuration = 120000;
   // int get defaultMinBufferDuration => _defaultMinBufferDuration;
 
-  int _defaultMaxBufferDuration = 360000;
+  int _defaultMaxBufferDuration = 120000;
   int get defaultMaxBufferDuration => _defaultMaxBufferDuration;
 
   int _defaultVideoResolution = 0;
@@ -241,9 +241,9 @@ class SettingsProvider with ChangeNotifier {
   }
 
   set defaultMaxBufferDuration(int value) {
-    _defaultMaxBufferDuration = value;
-    _settingsPreferences.setMaxBufferDuration(value);
-    _trackSetting('Max Buffer Duration', value);
+    _defaultMaxBufferDuration = value.clamp(15000, 180000);
+    _settingsPreferences.setMaxBufferDuration(_defaultMaxBufferDuration);
+    _trackSetting('Max Buffer Duration', _defaultMaxBufferDuration);
     notifyListeners();
   }
 

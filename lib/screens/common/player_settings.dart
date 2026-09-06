@@ -300,12 +300,6 @@ class _PlayerSettingsState extends State<PlayerSettings> {
                         120000: '120s',
                         150000: '150s',
                         180000: '180s',
-                        240000: '240s',
-                        300000: '300s',
-                        360000: '360s',
-                        420000: '420s',
-                        500000: '500s',
-                        600000: '600s',
                       },
                       onChanged: (value) => setState(
                         () => settingValues.defaultMaxBufferDuration = value,

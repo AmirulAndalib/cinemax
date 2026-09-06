@@ -95,7 +95,8 @@ class SettingsPreferences {
   }
 
   Future<int> getMaxBuffer() async {
-    return sharedPrefsSingleton.getInt(MAX_BUFFER_PREFERENCE) ?? 360000;
+    return (sharedPrefsSingleton.getInt(MAX_BUFFER_PREFERENCE) ?? 120000)
+        .clamp(15000, 180000);
   }
 
   static const DEFAULT_VIDEO_QUALITY = 'video_quality';
