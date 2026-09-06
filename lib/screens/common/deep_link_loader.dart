@@ -22,15 +22,19 @@ import '../../ui_components/app_ui_components.dart';
 /// was saved. The fetch therefore happens here, in front of whatever artwork the link came with, and
 /// the page is built only once there is a whole record to build it from.
 ///
-/// Home screen widgets and TMDB or IMDb addresses both arrive this way, which is what makes a page
-/// opened from outside the app the same page as one opened from inside it.
+/// TMDB and IMDb links arrive here directly. Widgets use this screen to retry a
+/// failed fetch after preparing their destination before navigation.
 class DeepLinkLoader extends StatefulWidget {
   const DeepLinkLoader({
     required this.load,
+    this.initialError,
     this.title,
     this.artworkPath,
     super.key,
   });
+
+  /// A failed pre-navigation fetch, shown immediately without fetching again.
+  final Object? initialError;
 
   /// Fetches the record and returns the page that renders it.
   final Future<Widget> Function(BuildContext context) load;
@@ -56,7 +60,8 @@ class _DeepLinkLoaderState extends State<DeepLinkLoader> {
   @override
   void initState() {
     super.initState();
-    _resolve();
+    _error = widget.initialError;
+    if (_error == null) _resolve();
   }
 
   Future<void> _resolve() async {

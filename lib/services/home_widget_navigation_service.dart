@@ -1,64 +1,47 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:home_widget/home_widget.dart';
 
 import 'deep_link_dispatcher.dart';
 import 'deep_link_routes.dart';
 import 'home_widget_deep_link.dart';
 
-/// Opens what a home screen widget was tapped on.
-///
-/// The link only names its target — the record behind it is fetched by the route this pushes, so a
-/// detail page opened from the home screen is the same page as one opened from inside the app rather
-/// than a stub of it. Waiting for a navigator and ignoring a tap reported twice are [DeepLinkDispatcher]'s
-/// job, because they are the same problem for every kind of link.
+/// Widget intents use the buffered Android link bridge for cold and warm starts.
 class HomeWidgetNavigationService {
   HomeWidgetNavigationService._();
 
-  static StreamSubscription<Uri?>? _subscription;
+  static late LinkSource Function() _source;
+  static int _request = 0;
+  static Future<Route<void>> Function(HomeWidgetTarget, LinkSource) _prepare =
+      DeepLinkRoutes.prepareWidget;
 
-  static Future<void> initialize() async {
-    await _subscription?.cancel();
-    _subscription = HomeWidget.widgetClicked.listen(_handleUri);
-    final initialUri = await HomeWidget.initiallyLaunchedFromHomeWidget();
-    if (initialUri != null) _handleUri(initialUri);
+  static void configure({
+    required LinkSource Function() source,
+    Future<Route<void>> Function(HomeWidgetTarget, LinkSource)? prepare,
+  }) {
+    _source = source;
+    _prepare = prepare ?? DeepLinkRoutes.prepareWidget;
   }
 
-  static void _handleUri(Uri? uri) {
-    if (uri == null) return;
+  static Future<void> handle(Uri uri) async {
     final target = HomeWidgetDeepLink.parse(uri);
     if (target == null) return;
-    final route = _route(target);
-    if (route == null) return;
+    final request = ++_request;
+    // Queue immediately so a later tap supersedes even an in-flight fetch.
+    final Future<Route<void>>? prepared =
+        target is HomeWidgetHomeTarget ? null : _prepare(target, _source());
     DeepLinkDispatcher.submit(
-      key: uri.toString(),
-      open: (navigator) => navigator.push(route),
+      // The bridge reports each intent once; repeated taps are new requests.
+      key: 'widget:$request:$uri',
+      open: (navigator) async {
+        final route = await prepared;
+        if (request != _request || !navigator.mounted) return;
+        if (route == null) {
+          navigator.popUntil((route) => route.isFirst);
+        } else {
+          navigator.push(route);
+        }
+      },
     );
+    // During startup this keeps the native splash up until the record is ready.
+    await prepared;
   }
-
-  /// The home link is the app itself, so it has arrived already and there is nothing to push.
-  static Route<void>? _route(HomeWidgetTarget target) => switch (target) {
-        HomeWidgetMovieTarget() => DeepLinkRoutes.movie(
-            id: target.id,
-            title: target.title,
-            artworkPath: target.backdropPath ?? target.posterPath,
-          ),
-        HomeWidgetTvTarget() => DeepLinkRoutes.tv(
-            id: target.id,
-            name: target.name,
-            artworkPath: target.backdropPath ?? target.posterPath,
-          ),
-        HomeWidgetEpisodeTarget() => DeepLinkRoutes.episode(
-            seriesId: target.seriesId,
-            seasonNumber: target.seasonNumber,
-            episodeNumber: target.episodeNumber,
-            seriesName: target.seriesName,
-            posterPath: target.posterPath,
-            artworkPath: target.stillPath ?? target.posterPath,
-          ),
-        HomeWidgetWellnessTarget() => DeepLinkRoutes.wellness(),
-        HomeWidgetMyListTarget() => DeepLinkRoutes.myList(),
-        HomeWidgetHomeTarget() => null,
-      };
 }

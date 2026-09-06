@@ -70,7 +70,8 @@ class MediaLinkBridge(
         // that is not a request to open anything a second time.
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null
         val value = when (intent.action) {
-            Intent.ACTION_VIEW -> intent.dataString
+            Intent.ACTION_VIEW,
+            "es.antonborri.home_widget.action.LAUNCH" -> intent.dataString
             Intent.ACTION_SEND -> intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
             else -> null
         }

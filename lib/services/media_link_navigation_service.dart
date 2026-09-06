@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'deep_link_dispatcher.dart';
 import 'deep_link_routes.dart';
 import 'media_link.dart';
+import 'home_widget_navigation_service.dart';
 
 /// Opens the TMDB and IMDb addresses the platform hands over.
 ///
@@ -28,7 +29,7 @@ class MediaLinkNavigationService {
     try {
       final waiting = await _channel.invokeListMethod<String>('drainLinks');
       for (final link in waiting ?? const <String>[]) {
-        handle(link);
+        await _handlePlatformLink(link);
       }
     } on MissingPluginException {
       // A platform without the bridge simply never delivers links.
@@ -38,7 +39,16 @@ class MediaLinkNavigationService {
   static Future<void> _onCall(MethodCall call) async {
     if (call.method != 'onLink') return;
     final link = call.arguments;
-    if (link is String) handle(link);
+    if (link is String) await _handlePlatformLink(link);
+  }
+
+  static Future<void> _handlePlatformLink(String value) async {
+    final uri = Uri.tryParse(value);
+    if (uri?.scheme == 'flixquest') {
+      await HomeWidgetNavigationService.handle(uri!);
+      return;
+    }
+    handle(value);
   }
 
   /// Opens whatever [value] points at, or says that it points at nothing this app can open.

@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../api/endpoints.dart';
 import '../functions/network.dart';
+import '../functions/function.dart';
 import '../models/custom_exceptions.dart';
 import '../models/external_id_lookup.dart';
 import '../models/tv.dart';
@@ -17,14 +20,15 @@ import '../screens/tv/seasons_detail.dart';
 import '../screens/tv/tv_detail.dart';
 import '../screens/wellness/wellness_screen.dart';
 import '../widgets/person_widgets.dart';
+import 'home_widget_deep_link.dart';
 
 /// Where a fetch reads from: the language it asks for, and the proxy it goes through.
 typedef LinkSource = ({String language, bool useProxy, String proxy});
 
 /// The screens a link can open, one route per kind of record.
 ///
-/// Each is a [DeepLinkLoader] around a fetch, because that is the whole of what a link promises: the
-/// page it opens has to be the page the app would have built from its own lists, with the rating, the
+/// Media links use a [DeepLinkLoader]; widgets prepare their routes before navigation. The
+/// destination is the page the app would have built from its own lists, with the rating, the
 /// votes and the synopsis the screens read off the record they are handed. A link carries an id and,
 /// at best, a name and a picture — everything else is fetched here, before anything is built.
 ///
@@ -32,6 +36,47 @@ typedef LinkSource = ({String language, bool useProxy, String proxy});
 /// of those ways arrives at the same screen with the same record behind it.
 class DeepLinkRoutes {
   const DeepLinkRoutes._();
+
+  /// Resolve widget data before navigation, including before runApp on a cold start.
+  /// Failed requests retain the target and offer the same retry as other links.
+  static Future<Route<void>> prepareWidget(
+    HomeWidgetTarget target,
+    LinkSource source,
+  ) async {
+    Future<Widget> load(LinkSource source) => switch (target) {
+          HomeWidgetMovieTarget() => _moviePage(id: target.id, source: source),
+          HomeWidgetTvTarget() => _tvPage(id: target.id, source: source),
+          HomeWidgetEpisodeTarget() => _episodePage(
+              seriesId: target.seriesId,
+              seasonNumber: target.seasonNumber,
+              episodeNumber: target.episodeNumber,
+              seriesName: target.seriesName,
+              posterPath: target.posterPath,
+              source: source,
+            ),
+          HomeWidgetWellnessTarget() => Future.value(const WellnessScreen()),
+          HomeWidgetMyListTarget() => Future.value(const BookmarkScreen()),
+          HomeWidgetHomeTarget() => throw StateError('Home needs no route'),
+        };
+    try {
+      if (target is HomeWidgetMovieTarget ||
+          target is HomeWidgetTvTarget ||
+          target is HomeWidgetEpisodeTarget) {
+        if (!await checkConnection().timeout(const Duration(seconds: 3))) {
+          throw const SocketException('No connection to fetch the record');
+        }
+      }
+      final page = await load(source).timeout(const Duration(seconds: 12));
+      return MaterialPageRoute<void>(builder: (_) => page);
+    } catch (error) {
+      return MaterialPageRoute<void>(
+        builder: (_) => DeepLinkLoader(
+          initialError: error,
+          load: (context) => load(_source(context)),
+        ),
+      );
+    }
+  }
 
   static Route<void> movie({
     required int id,

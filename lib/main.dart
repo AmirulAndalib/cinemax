@@ -21,6 +21,7 @@ import 'provider/wellness_provider.dart';
 import 'services/bookmark_sync_service.dart';
 import 'services/recently_watched_sync_service.dart';
 import 'services/media_link_navigation_service.dart';
+import 'services/home_widget_navigation_service.dart';
 import 'singleton/sharedpreferences_singleton.dart';
 import 'tv/platform/device_presentation.dart';
 import 'tv/platform/device_presentation_detector.dart';
@@ -142,8 +143,15 @@ Future<DevicePresentation> appInitialize({
 
 void main() async {
   final devicePresentation = await appInitialize();
-  await MediaLinkNavigationService.initialize();
   HttpOverrides.global = MyHttpOverrides();
+  HomeWidgetNavigationService.configure(
+    source: () => (
+      language: settingsProvider.appLanguage,
+      useProxy: settingsProvider.enableProxy,
+      proxy: appDependencyProvider.tmdbProxy,
+    ),
+  );
+  await MediaLinkNavigationService.initialize();
   runApp(EasyLocalization(
     supportedLocales: Translation.all,
     path: 'assets/translations',

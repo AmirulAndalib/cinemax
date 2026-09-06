@@ -20,6 +20,7 @@ class DeepLinkDispatcher {
   /// to do nothing at all.
   static const Duration _repeatWindow = Duration(seconds: 3);
 
+  static bool _deliveryScheduled = false;
   static String? _pendingKey;
   static LinkAction? _pendingAction;
   static String? _lastKey;
@@ -35,6 +36,7 @@ class DeepLinkDispatcher {
     if (navigator == null) {
       _pendingKey = key;
       _pendingAction = open;
+      _scheduleDelivery();
       return;
     }
     _pendingKey = null;
@@ -50,10 +52,23 @@ class DeepLinkDispatcher {
     final key = _pendingKey;
     final action = _pendingAction;
     if (key == null || action == null) return;
-    if (InAppMessagingService.navigatorKey.currentState == null) return;
+    if (InAppMessagingService.navigatorKey.currentState == null) {
+      _scheduleDelivery();
+      return;
+    }
     _pendingKey = null;
     _pendingAction = null;
     submit(key: key, open: action);
+  }
+
+  static void _scheduleDelivery() {
+    if (_deliveryScheduled) return;
+    _deliveryScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _deliveryScheduled = false;
+      onAppReady();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   static bool _isRepeat(String key) {

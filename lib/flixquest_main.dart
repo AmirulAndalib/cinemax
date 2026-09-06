@@ -27,7 +27,6 @@ import 'provider/offline_download_provider.dart';
 import 'provider/wellness_provider.dart';
 import 'services/in_app_messaging_service.dart';
 import 'services/deep_link_dispatcher.dart';
-import 'services/home_widget_navigation_service.dart';
 import 'services/home_widget_service.dart';
 import 'services/recently_watched_sync_service.dart';
 import 'services/app_session_state_store.dart';
@@ -108,9 +107,6 @@ class _FlixQuestState extends State<FlixQuest>
     _initConfig();
     fileDelete();
     InAppMessagingService.initialize();
-    // Read widget launch intents after the Flutter engine is attached. The service queues
-    // the initial target until this app has a navigator to receive it.
-    unawaited(HomeWidgetNavigationService.initialize());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       DeepLinkDispatcher.onAppReady();
       unawaited(_refreshHomeWidgets());
