@@ -11,6 +11,7 @@ import '../../models/live_tv.dart';
 import '../../provider/app_dependency_provider.dart';
 import '../../provider/settings_provider.dart';
 import '../../services/daddylive_service.dart';
+import '../../services/ethio_sports_service.dart';
 import '../../services/analytics_service.dart';
 import '../../ui_components/app_ui_components.dart';
 import 'live_player.dart';
@@ -20,6 +21,8 @@ import '../../widgets/hosted_ads_banner.dart';
 enum _ChannelScope { all, favorites, recent }
 
 enum _LiveTvMode { channels, schedule }
+
+enum _LiveTvSource { daddyLive, ethioSports }
 
 const _allCategoriesKey = '__all_categories__';
 
@@ -39,9 +42,11 @@ class ChannelList extends StatefulWidget {
 
 class _ChannelListState extends State<ChannelList> {
   static const _analyticsSurface = 'standard';
-  final _database = LiveTVDatabaseController();
+  final _daddyDatabase = LiveTVDatabaseController();
+  final _ethioDatabase = LiveTVDatabaseController(namespace: 'ethiosports');
   final _searchController = TextEditingController();
   DaddyLiveService? _service;
+  EthioSportsService? _ethioService;
   List<Channel> _channels = const <Channel>[];
   DaddyLiveEpg? _epg;
   Set<String> _favoriteIds = <String>{};
@@ -54,6 +59,7 @@ class _ChannelListState extends State<ChannelList> {
   Timer? _searchAnalyticsDebounce;
   _ChannelScope _scope = _ChannelScope.all;
   _LiveTvMode _mode = _LiveTvMode.channels;
+  _LiveTvSource _source = _LiveTvSource.daddyLive;
   int _selectedDayIndex = 0;
 
   @override
@@ -69,6 +75,7 @@ class _ChannelListState extends State<ChannelList> {
   void dispose() {
     _searchAnalyticsDebounce?.cancel();
     _service?.close();
+    _ethioService?.close();
     _searchController.dispose();
     super.dispose();
   }
@@ -76,6 +83,16 @@ class _ChannelListState extends State<ChannelList> {
   DaddyLiveService _api() => _service ??= DaddyLiveService(
         baseUrl: context.read<AppDependencyProvider>().flixquestAPIURL,
       );
+
+  EthioSportsService _ethioApi() => _ethioService ??= EthioSportsService(
+        baseUrl: context.read<AppDependencyProvider>().flixquestAPIURL,
+      );
+
+  LiveTvService get _activeService =>
+      _source == _LiveTvSource.ethioSports ? _ethioApi() : _api();
+
+  LiveTVDatabaseController get _database =>
+      _source == _LiveTvSource.ethioSports ? _ethioDatabase : _daddyDatabase;
 
   AnalyticsService get _analytics => context.read<SettingsProvider>().analytics;
 
@@ -93,16 +110,20 @@ class _ChannelListState extends State<ChannelList> {
       final recent = await _database.getRecentIds();
       List<Channel> channels;
       DaddyLiveEpg? epg;
-      if (!refresh && await _database.isCacheValid()) {
+      if (_source == _LiveTvSource.daddyLive &&
+          !refresh &&
+          await _database.isCacheValid()) {
         cacheHit = true;
         channels = await _database.getCachedChannels();
         epg = await _database.getCachedEpg();
       } else {
-        final catalog = await _api().getCatalog(refresh: refresh);
+        final catalog = await _activeService.getCatalog(refresh: refresh);
         channels = catalog.channels;
         epg = catalog.epg;
-        await _database.cacheChannels(channels);
-        await _database.cacheEpg(catalog.epg);
+        if (_source == _LiveTvSource.daddyLive) {
+          await _database.cacheChannels(channels);
+          await _database.cacheEpg(catalog.epg);
+        }
       }
       channels = channels.toList()..sort((a, b) => a.name.compareTo(b.name));
       if (!mounted) return;
@@ -237,7 +258,7 @@ class _ChannelListState extends State<ChannelList> {
     final stopwatch = Stopwatch()..start();
     setState(() => _resolvingId = channel.id);
     try {
-      final stream = await _api().getStream(channel.id);
+      final stream = await _activeService.getStream(channel.id);
       await _database.addRecent(channel.id);
       if (!mounted) return;
       _analytics.trackLiveTVChannelView(
@@ -259,6 +280,9 @@ class _ChannelListState extends State<ChannelList> {
             channelName: channel.name,
             videoUrl: stream.url,
             headers: stream.headers,
+            mediaType: stream.mediaType,
+            clearKey: stream.clearKey,
+            variants: stream.variants,
             autoFullScreen: autoFullScreen,
             colors: <Color>[
               Theme.of(context).colorScheme.primary,
@@ -267,7 +291,7 @@ class _ChannelListState extends State<ChannelList> {
             // Keep in-player switching independent from browse filters.
             channels: _channels,
             initialChannelId: channel.id,
-            service: _api(),
+            service: _activeService,
             analytics: _analytics,
             analyticsSurface: _analyticsSurface,
             scraperApiUrl:
@@ -322,6 +346,19 @@ class _ChannelListState extends State<ChannelList> {
       action: 'view_changed',
       value: mode.name,
     );
+  }
+
+  void _selectSource(_LiveTvSource source) {
+    if (source == _source) return;
+    setState(() {
+      _source = source;
+      _mode = _LiveTvMode.channels;
+      _selectedCategory = null;
+      _selectedDayIndex = 0;
+      _channels = const <Channel>[];
+      _epg = null;
+    });
+    _load();
   }
 
   void _selectScope(_ChannelScope scope) {
@@ -527,21 +564,37 @@ class _ChannelListState extends State<ChannelList> {
               color: colors.surfaceContainerHighest.withValues(alpha: .6),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Row(
-              children: <Widget>[
-                _ModeTab(
-                  icon: PhosphorIcons.televisionSimple(),
-                  label: 'Channels',
-                  selected: !isSchedule,
-                  onTap: () => _selectMode(_LiveTvMode.channels),
-                ),
-                _ModeTab(
-                  icon: PhosphorIcons.calendarDots(),
-                  label: 'Schedule',
-                  selected: isSchedule,
-                  onTap: () => _selectMode(_LiveTvMode.schedule),
-                ),
-              ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  _ModeTab(
+                    icon: PhosphorIcons.broadcast(),
+                    label: 'DaddyLive',
+                    selected: _source == _LiveTvSource.daddyLive,
+                    onTap: () => _selectSource(_LiveTvSource.daddyLive),
+                  ),
+                  _ModeTab(
+                    icon: PhosphorIcons.football(),
+                    label: 'Ethio Sports',
+                    selected: _source == _LiveTvSource.ethioSports,
+                    onTap: () => _selectSource(_LiveTvSource.ethioSports),
+                  ),
+                  const SizedBox(width: 8),
+                  _ModeTab(
+                    icon: PhosphorIcons.televisionSimple(),
+                    label: 'Channels',
+                    selected: !isSchedule,
+                    onTap: () => _selectMode(_LiveTvMode.channels),
+                  ),
+                  _ModeTab(
+                    icon: PhosphorIcons.calendarDots(),
+                    label: 'Schedule',
+                    selected: isSchedule,
+                    onTap: () => _selectMode(_LiveTvMode.schedule),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 14),

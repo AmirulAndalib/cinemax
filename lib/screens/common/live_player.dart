@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:better_player_plus/better_player_plus.dart';
 import 'package:flutter/material.dart';
@@ -26,6 +27,9 @@ class LivePlayer extends StatefulWidget {
     required this.analyticsSurface,
     required this.scraperApiUrl,
     this.headers = const <String, String>{},
+    this.mediaType = 'hls',
+    this.clearKey,
+    this.variants = const <LiveStreamVariant>[],
     this.streamIcon,
     this.channels = const <Channel>[],
     this.initialChannelId,
@@ -44,13 +48,16 @@ class LivePlayer extends StatefulWidget {
   final String analyticsSurface;
   final String scraperApiUrl;
   final Map<String, String> headers;
+  final String mediaType;
+  final String? clearKey;
+  final List<LiveStreamVariant> variants;
   final String? streamIcon;
 
   /// Channels available for in-player switching. When empty, the channel
   /// switcher is hidden.
   final List<Channel> channels;
   final String? initialChannelId;
-  final DaddyLiveService? service;
+  final LiveTvService? service;
   final void Function(Channel channel)? onChannelSwitch;
   final bool enableCast;
   final bool useTvControls;
@@ -109,6 +116,9 @@ class _LivePlayerState extends State<LivePlayer> {
   Object? _lastPlaybackError;
   late String _currentVideoUrl;
   late Map<String, String> _currentVideoHeaders;
+  late String _currentMediaType;
+  String? _currentClearKey;
+  late List<LiveStreamVariant> _streamVariants;
   final ValueNotifier<_LivePlaybackFailure?> _playbackFailure =
       ValueNotifier<_LivePlaybackFailure?>(null);
   late final AppDependencyProvider _appDependencies;
@@ -138,6 +148,9 @@ class _LivePlayerState extends State<LivePlayer> {
     _currentChannelName = widget.channelName;
     _currentVideoUrl = widget.videoUrl;
     _currentVideoHeaders = Map<String, String>.of(widget.headers);
+    _currentMediaType = widget.mediaType;
+    _currentClearKey = widget.clearKey;
+    _streamVariants = List<LiveStreamVariant>.of(widget.variants);
 
     betterPlayerBufferingConfiguration =
         const BetterPlayerBufferingConfiguration(
@@ -204,7 +217,12 @@ class _LivePlayerState extends State<LivePlayer> {
     final operation = _beginSourceOperation();
     try {
       final didSetup = await _setupStreamWithIntro(
-        _buildDataSource(widget.videoUrl, widget.headers),
+        _buildDataSource(
+          widget.videoUrl,
+          widget.headers,
+          mediaType: widget.mediaType,
+          clearKey: widget.clearKey,
+        ),
         operation,
       );
       if (!didSetup || !_isActiveSourceOperation(operation)) return;
@@ -317,15 +335,20 @@ class _LivePlayerState extends State<LivePlayer> {
       overflowModalTextColor: widget.colors.first,
       overflowModalColor: widget.colors.last,
       enableAudioTracks: true,
-      overflowMenuCustomItems: canSwitchChannels
-          ? <BetterPlayerOverflowMenuItem>[
-              BetterPlayerOverflowMenuItem(
-                PhosphorIcons.televisionSimple(),
-                'Channels',
-                _showChannelSwitcher,
-              ),
-            ]
-          : const <BetterPlayerOverflowMenuItem>[],
+      overflowMenuCustomItems: <BetterPlayerOverflowMenuItem>[
+        if (canSwitchVariants)
+          BetterPlayerOverflowMenuItem(
+            PhosphorIcons.gauge(),
+            'Stream quality',
+            _showStreamVariantSwitcher,
+          ),
+        if (canSwitchChannels)
+          BetterPlayerOverflowMenuItem(
+            PhosphorIcons.televisionSimple(),
+            'Channels',
+            _showChannelSwitcher,
+          ),
+      ],
     );
   }
 
@@ -334,11 +357,20 @@ class _LivePlayerState extends State<LivePlayer> {
       widget.channels.isNotEmpty &&
       widget.channels.length > 1;
 
+  bool get canSwitchVariants => _streamVariants.length > 1;
+
   BetterPlayerDataSource _buildDataSource(
     String url,
-    Map<String, String> headers,
-  ) {
+    Map<String, String> headers, {
+    String mediaType = 'hls',
+    String? clearKey,
+  }) {
     final resolvedHeaders = _playbackHeaders(headers);
+    final isDash = mediaType.toLowerCase() == 'dash';
+    final keyParts = clearKey?.split(':');
+    final clearKeyJson = keyParts != null && keyParts.length == 2
+        ? _clearKeyJson(keyParts[0], keyParts[1])
+        : null;
     return BetterPlayerDataSource(
       BetterPlayerDataSourceType.network,
       url,
@@ -348,8 +380,15 @@ class _LivePlayerState extends State<LivePlayer> {
       // window, so playback fails after the cached segments are consumed.
       cacheConfiguration: const BetterPlayerCacheConfiguration(useCache: false),
       headers: resolvedHeaders,
-      videoFormat: BetterPlayerVideoFormat.hls,
-      castConfiguration: widget.enableCast
+      videoFormat:
+          isDash ? BetterPlayerVideoFormat.dash : BetterPlayerVideoFormat.hls,
+      drmConfiguration: clearKeyJson == null
+          ? null
+          : BetterPlayerDrmConfiguration(
+              drmType: BetterPlayerDrmType.clearKey,
+              clearKey: clearKeyJson,
+            ),
+      castConfiguration: widget.enableCast && !isDash && clearKeyJson == null
           ? BetterPlayerCastConfiguration(
               title: _currentChannelName,
               subtitle: 'Live TV',
@@ -386,6 +425,8 @@ class _LivePlayerState extends State<LivePlayer> {
       if (!_isActiveSourceOperation(operation)) return;
       final url = stream?.url ?? _currentVideoUrl;
       final headers = stream?.headers ?? _currentVideoHeaders;
+      final mediaType = stream?.mediaType ?? _currentMediaType;
+      final clearKey = stream?.clearKey ?? _currentClearKey;
       if (url.trim().isEmpty) {
         throw StateError('The channel returned no playable stream.');
       }
@@ -396,11 +437,24 @@ class _LivePlayerState extends State<LivePlayer> {
       // Do not replay the branded intro during recovery.
       final didSetup = await _setupDataSourceForOperation(
         operation,
-        _buildDataSource(url, headers),
+        _buildDataSource(
+          url,
+          headers,
+          mediaType: mediaType,
+          clearKey: clearKey,
+        ),
       );
       if (!didSetup || !_isActiveSourceOperation(operation)) return;
       _currentVideoUrl = url;
       _currentVideoHeaders = Map<String, String>.of(headers);
+      _currentMediaType = mediaType;
+      _currentClearKey = clearKey;
+      if (stream != null && stream.variants.isNotEmpty) {
+        _streamVariants = stream.variants;
+        _betterPlayerController.setBetterPlayerControlsConfiguration(
+          _buildControlsConfiguration(_currentChannelName),
+        );
+      }
       if (_betterPlayerController.isPlaying() != true) {
         await _betterPlayerController.play();
       }
@@ -479,7 +533,12 @@ class _LivePlayerState extends State<LivePlayer> {
         }
         final didSetup = await _setupDataSourceForOperation(
           operation,
-          _buildDataSource(stream.url, stream.headers),
+          _buildDataSource(
+            stream.url,
+            stream.headers,
+            mediaType: stream.mediaType,
+            clearKey: stream.clearKey,
+          ),
         );
         if (!didSetup ||
             !_isActiveRecovery(generation) ||
@@ -488,10 +547,23 @@ class _LivePlayerState extends State<LivePlayer> {
         }
         _currentVideoUrl = stream.url;
         _currentVideoHeaders = Map<String, String>.of(stream.headers);
+        _currentMediaType = stream.mediaType;
+        _currentClearKey = stream.clearKey;
+        if (stream.variants.isNotEmpty) {
+          _streamVariants = stream.variants;
+          _betterPlayerController.setBetterPlayerControlsConfiguration(
+            _buildControlsConfiguration(_currentChannelName),
+          );
+        }
       } else {
         final didSetup = await _setupDataSourceForOperation(
           operation,
-          _buildDataSource(_currentVideoUrl, _currentVideoHeaders),
+          _buildDataSource(
+            _currentVideoUrl,
+            _currentVideoHeaders,
+            mediaType: _currentMediaType,
+            clearKey: _currentClearKey,
+          ),
         );
         if (!didSetup) return;
       }
@@ -771,6 +843,59 @@ class _LivePlayerState extends State<LivePlayer> {
     await _switchChannel(selected);
   }
 
+  Future<void> _showStreamVariantSwitcher() async {
+    final selected = await showModalBottomSheet<LiveStreamVariant>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: <Widget>[
+            const ListTile(title: Text('Stream quality')),
+            for (final variant in _streamVariants)
+              ListTile(
+                leading: Icon(PhosphorIcons.gauge()),
+                title: Text(variant.title ?? 'Stream'),
+                subtitle: Text(variant.mediaType.toUpperCase()),
+                onTap: () => Navigator.of(context).pop(variant),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || selected.url == _currentVideoUrl) return;
+    await _switchVariant(selected);
+  }
+
+  Future<void> _switchVariant(LiveStreamVariant variant) async {
+    if (_isSwitching) return;
+    final operation = _beginSourceOperation();
+    setState(() => _isSwitching = true);
+    try {
+      final didSetup = await _setupDataSourceForOperation(
+        operation,
+        _buildDataSource(
+          variant.url,
+          variant.headers,
+          mediaType: variant.mediaType,
+          clearKey: variant.clearKey,
+        ),
+      );
+      if (!didSetup || !_isActiveSourceOperation(operation)) return;
+      _currentVideoUrl = variant.url;
+      _currentVideoHeaders = Map<String, String>.of(variant.headers);
+      _currentMediaType = variant.mediaType;
+      _currentClearKey = variant.clearKey;
+      _showBanner(variant.title ?? 'Stream quality');
+    } catch (error) {
+      _trackPlayerEvent('quality_switch_error', error: error.toString());
+      _beginPlaybackRecovery(error);
+    } finally {
+      if (mounted) setState(() => _isSwitching = false);
+    }
+  }
+
   Future<void> _switchChannel(Channel channel) async {
     final service = widget.service;
     if (_isSwitching || service == null || channel.id == _currentChannelId) {
@@ -811,11 +936,24 @@ class _LivePlayerState extends State<LivePlayer> {
       }
       final didSetup = await _setupDataSourceForOperation(
         operation,
-        _buildDataSource(stream.url, stream.headers),
+        _buildDataSource(
+          stream.url,
+          stream.headers,
+          mediaType: stream.mediaType,
+          clearKey: stream.clearKey,
+        ),
       );
       if (!didSetup || !_isActiveSourceOperation(operation)) return;
       _currentVideoUrl = stream.url;
       _currentVideoHeaders = Map<String, String>.of(stream.headers);
+      _currentMediaType = stream.mediaType;
+      _currentClearKey = stream.clearKey;
+      if (stream.variants.isNotEmpty) {
+        _streamVariants = stream.variants;
+        _betterPlayerController.setBetterPlayerControlsConfiguration(
+          _buildControlsConfiguration(_currentChannelName),
+        );
+      }
       setState(() {
         _isSwitching = false;
       });
@@ -1015,6 +1153,23 @@ class _LivePlayerState extends State<LivePlayer> {
   void _exitPlayer() {
     Navigator.of(context).pop();
   }
+}
+
+String? _clearKeyJson(String keyId, String key) {
+  final hex = RegExp(r'^[0-9a-fA-F]{32}$');
+  if (!hex.hasMatch(keyId) || !hex.hasMatch(key)) return null;
+  List<int> bytes(String value) => <int>[
+        for (var index = 0; index < value.length; index += 2)
+          int.parse(value.substring(index, index + 2), radix: 16),
+      ];
+  String encode(String value) =>
+      base64Url.encode(bytes(value)).replaceAll('=', '');
+  return jsonEncode(<String, Object>{
+    'type': 'temporary',
+    'keys': <Map<String, String>>[
+      <String, String>{'kty': 'oct', 'kid': encode(keyId), 'k': encode(key)},
+    ],
+  });
 }
 
 class _ChannelSwitcherSheet extends StatefulWidget {

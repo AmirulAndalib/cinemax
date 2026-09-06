@@ -5,12 +5,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/live_tv.dart';
 
 class LiveTVDatabaseController {
-  static const _channelsKey = 'daddylive_channels_v3';
-  static const _updatedKey = 'daddylive_channels_updated_v3';
-  static const _favoritesKey = 'daddylive_favorites_v2';
-  static const _recentKey = 'daddylive_recent_v2';
-  static const _epgKey = 'daddylive_epg_v3';
-  static const _epgUpdatedKey = 'daddylive_epg_updated_v3';
+  LiveTVDatabaseController({String namespace = 'daddylive'})
+      : _namespace = namespace;
+
+  final String _namespace;
+
+  String get _channelsKey => '${_namespace}_channels_v3';
+  String get _updatedKey => '${_namespace}_channels_updated_v3';
+  String get _favoritesKey => '${_namespace}_favorites_v2';
+  String get _recentKey => '${_namespace}_recent_v2';
+  String get _epgKey => '${_namespace}_epg_v3';
+  String get _epgUpdatedKey => '${_namespace}_epg_updated_v3';
 
   Future<void> cacheChannels(List<Channel> channels) async {
     final preferences = await SharedPreferences.getInstance();

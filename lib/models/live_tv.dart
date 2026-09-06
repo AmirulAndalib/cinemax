@@ -27,6 +27,10 @@ class Channel {
     this.eventTitles = const <String>[],
     this.nowPlaying,
     this.nextUp,
+    this.logo,
+    this.startsAt,
+    this.endsAt,
+    this.formatCount = 0,
   });
 
   factory Channel.fromJson(Map<String, dynamic> json) => Channel(
@@ -44,6 +48,10 @@ class Channel {
                 .toList(growable: false),
         nowPlaying: json['nowPlaying']?.toString(),
         nextUp: json['nextUp']?.toString(),
+        logo: json['logo']?.toString(),
+        startsAt: DateTime.tryParse(json['startsAt']?.toString() ?? ''),
+        endsAt: DateTime.tryParse(json['endsAt']?.toString() ?? ''),
+        formatCount: int.tryParse(json['formatCount']?.toString() ?? '') ?? 0,
       );
 
   final String id;
@@ -61,6 +69,10 @@ class Channel {
 
   /// Title of the next upcoming event on this channel, when known.
   final String? nextUp;
+  final String? logo;
+  final DateTime? startsAt;
+  final DateTime? endsAt;
+  final int formatCount;
 
   Channel copyWith({
     List<String>? categories,
@@ -78,6 +90,10 @@ class Channel {
         eventTitles: eventTitles ?? this.eventTitles,
         nowPlaying: nowPlaying ?? this.nowPlaying,
         nextUp: nextUp ?? this.nextUp,
+        logo: logo,
+        startsAt: startsAt,
+        endsAt: endsAt,
+        formatCount: formatCount,
       );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -90,6 +106,10 @@ class Channel {
         if (eventTitles.isNotEmpty) 'eventTitles': eventTitles,
         if (nowPlaying != null) 'nowPlaying': nowPlaying,
         if (nextUp != null) 'nextUp': nextUp,
+        if (logo != null) 'logo': logo,
+        if (startsAt != null) 'startsAt': startsAt!.toIso8601String(),
+        if (endsAt != null) 'endsAt': endsAt!.toIso8601String(),
+        if (formatCount > 0) 'formatCount': formatCount,
       };
 }
 
@@ -99,6 +119,10 @@ class DaddyLiveStream {
     required this.headers,
     required this.embedUrl,
     this.expiresAt,
+    this.mediaType = 'hls',
+    this.clearKey,
+    this.title,
+    this.variants = const <LiveStreamVariant>[],
   });
 
   factory DaddyLiveStream.fromJson(Map<String, dynamic> json) {
@@ -112,6 +136,14 @@ class DaddyLiveStream {
       ),
       embedUrl: stream['embedUrl']?.toString() ?? '',
       expiresAt: DateTime.tryParse(stream['expiresAt']?.toString() ?? ''),
+      mediaType: stream['mediaType']?.toString() ??
+          (stream['isM3U8'] == false ? 'dash' : 'hls'),
+      clearKey: stream['clearKey']?.toString(),
+      title: stream['title']?.toString(),
+      variants: (json['streams'] as List<dynamic>? ?? const <dynamic>[])
+          .whereType<Map<String, dynamic>>()
+          .map(LiveStreamVariant.fromJson)
+          .toList(growable: false),
     );
   }
 
@@ -119,6 +151,42 @@ class DaddyLiveStream {
   final Map<String, String> headers;
   final String embedUrl;
   final DateTime? expiresAt;
+  final String mediaType;
+  final String? clearKey;
+  final String? title;
+  final List<LiveStreamVariant> variants;
+}
+
+class LiveStreamVariant {
+  const LiveStreamVariant({
+    required this.url,
+    required this.headers,
+    required this.mediaType,
+    this.clearKey,
+    this.title,
+    this.logo,
+  });
+
+  factory LiveStreamVariant.fromJson(Map<String, dynamic> json) {
+    final headers = (json['headers'] as Map<String, dynamic>? ?? const {})
+        .map((key, value) => MapEntry(key, value.toString()));
+    return LiveStreamVariant(
+      url: json['url']?.toString() ?? '',
+      headers: headers,
+      mediaType: json['mediaType']?.toString() ??
+          (json['isM3U8'] == false ? 'dash' : 'hls'),
+      clearKey: json['clearKey']?.toString(),
+      title: json['title']?.toString(),
+      logo: json['logo']?.toString(),
+    );
+  }
+
+  final String url;
+  final Map<String, String> headers;
+  final String mediaType;
+  final String? clearKey;
+  final String? title;
+  final String? logo;
 }
 
 class DaddyLiveEpg {

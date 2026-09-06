@@ -71,7 +71,15 @@ class DaddyLiveCatalog {
   final List<String> categories;
 }
 
-class DaddyLiveService {
+abstract interface class LiveTvService {
+  Future<DaddyLiveCatalog> getCatalog({bool refresh = false});
+
+  Future<DaddyLiveStream> getStream(String channelId);
+
+  void close();
+}
+
+class DaddyLiveService implements LiveTvService {
   DaddyLiveService({required String baseUrl, http.Client? client})
       : _baseUrl = baseUrl.replaceFirst(RegExp(r'/+$'), ''),
         _client = client ?? http.Client();
@@ -87,6 +95,7 @@ class DaddyLiveService {
   Uri _uri(String path, [Map<String, String>? query]) =>
       Uri.parse('$_baseUrl$path').replace(queryParameters: query);
 
+  @override
   Future<DaddyLiveCatalog> getCatalog({bool refresh = false}) async {
     final results = await Future.wait<dynamic>(<Future<dynamic>>[
       getChannels(refresh: refresh),
@@ -178,6 +187,7 @@ class DaddyLiveService {
   /// directly on the device. The device therefore re-fetches the embed page
   /// itself and extracts the m3u8 URL from it, falling back to the
   /// server-resolved URL when that is unavailable.
+  @override
   Future<DaddyLiveStream> getStream(String channelId) async {
     final json = await _getJson(
       _uri('/api/v2/dlhd/channels/${Uri.encodeComponent(channelId)}/stream'),
@@ -343,5 +353,6 @@ class DaddyLiveService {
     return decoded;
   }
 
+  @override
   void close() => _client.close();
 }

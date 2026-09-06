@@ -14,6 +14,7 @@ import '../../provider/settings_provider.dart';
 import '../../screens/common/live_player.dart';
 import '../../services/analytics_service.dart';
 import '../../services/daddylive_service.dart';
+import '../../services/ethio_sports_service.dart';
 import '../app/tv_design.dart';
 import '../focus/tv_focusable.dart';
 import '../player/tv_player_screen.dart';
@@ -22,6 +23,8 @@ import '../widgets/tv_state_panel.dart';
 enum _TvLiveScope { all, favorites, recent }
 
 enum _TvLiveMode { channels, schedule }
+
+enum _TvLiveSource { daddyLive, ethioSports }
 
 class TvLiveScreen extends StatefulWidget {
   const TvLiveScreen({required this.metrics, super.key});
@@ -34,17 +37,20 @@ class TvLiveScreen extends StatefulWidget {
 
 class _TvLiveScreenState extends State<TvLiveScreen> {
   static const _analyticsSurface = 'tv';
-  final _database = LiveTVDatabaseController();
+  final _daddyDatabase = LiveTVDatabaseController();
+  final _ethioDatabase = LiveTVDatabaseController(namespace: 'ethiosports');
   final _searchController = TextEditingController();
   late final FocusNode _searchFocus;
   late final FocusNode _firstChannelFocus;
   DaddyLiveService? _service;
+  EthioSportsService? _ethioService;
   List<Channel> _channels = const <Channel>[];
   DaddyLiveEpg? _epg;
   Set<String> _favorites = <String>{};
   List<String> _recent = const <String>[];
   _TvLiveScope _scope = _TvLiveScope.all;
   _TvLiveMode _mode = _TvLiveMode.channels;
+  _TvLiveSource _source = _TvLiveSource.daddyLive;
   String? _category;
   int _selectedDayIndex = 0;
   String? _resolvingId;
@@ -91,6 +97,7 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
   void dispose() {
     _searchAnalyticsDebounce?.cancel();
     _service?.close();
+    _ethioService?.close();
     _searchController.dispose();
     _searchFocus.dispose();
     _firstChannelFocus.dispose();
@@ -100,6 +107,16 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
   DaddyLiveService _api() => _service ??= DaddyLiveService(
         baseUrl: context.read<AppDependencyProvider>().flixquestAPIURL,
       );
+
+  EthioSportsService _ethioApi() => _ethioService ??= EthioSportsService(
+        baseUrl: context.read<AppDependencyProvider>().flixquestAPIURL,
+      );
+
+  LiveTvService get _activeService =>
+      _source == _TvLiveSource.ethioSports ? _ethioApi() : _api();
+
+  LiveTVDatabaseController get _database =>
+      _source == _TvLiveSource.ethioSports ? _ethioDatabase : _daddyDatabase;
 
   AnalyticsService get _analytics => context.read<SettingsProvider>().analytics;
 
@@ -117,16 +134,20 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
       final recent = await _database.getRecentIds();
       List<Channel> channels;
       DaddyLiveEpg? epg;
-      if (!refresh && await _database.isCacheValid()) {
+      if (_source == _TvLiveSource.daddyLive &&
+          !refresh &&
+          await _database.isCacheValid()) {
         cacheHit = true;
         channels = await _database.getCachedChannels();
         epg = await _database.getCachedEpg();
       } else {
-        final catalog = await _api().getCatalog(refresh: refresh);
+        final catalog = await _activeService.getCatalog(refresh: refresh);
         channels = catalog.channels;
         epg = catalog.epg;
-        await _database.cacheChannels(channels);
-        await _database.cacheEpg(epg);
+        if (_source == _TvLiveSource.daddyLive) {
+          await _database.cacheChannels(channels);
+          await _database.cacheEpg(epg);
+        }
       }
       channels = channels.toList()..sort((a, b) => a.name.compareTo(b.name));
       if (!mounted) return;
@@ -259,7 +280,7 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
     final stopwatch = Stopwatch()..start();
     setState(() => _resolvingId = channel.id);
     try {
-      final stream = await _api().getStream(channel.id);
+      final stream = await _activeService.getStream(channel.id);
       await _database.addRecent(channel.id);
       if (!mounted) return;
       _analytics.trackLiveTVChannelView(
@@ -282,6 +303,9 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
               channelName: channel.name,
               videoUrl: stream.url,
               headers: stream.headers,
+              mediaType: stream.mediaType,
+              clearKey: stream.clearKey,
+              variants: stream.variants,
               autoFullScreen: false,
               colors: <Color>[
                 theme.colorScheme.primary,
@@ -290,7 +314,7 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
               // Keep in-player switching independent from browse filters.
               channels: _channels,
               initialChannelId: channel.id,
-              service: _api(),
+              service: _activeService,
               analytics: _analytics,
               analyticsSurface: _analyticsSurface,
               scraperApiUrl:
@@ -368,6 +392,20 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
       action: 'view_changed',
       value: mode.name,
     );
+  }
+
+  void _selectSource(_TvLiveSource source) {
+    if (source == _source) return;
+    setState(() {
+      _source = source;
+      _mode = _TvLiveMode.channels;
+      _category = null;
+      _selectedDayIndex = 0;
+      _channels = const <Channel>[];
+      _epg = null;
+      _initialChannelFocusRequested = false;
+    });
+    _load();
   }
 
   void _selectScope(_TvLiveScope scope) {
@@ -514,6 +552,32 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
           child: Row(
             children: <Widget>[
+              for (final entry in <(_TvLiveSource, String, IconData)>[
+                (
+                  _TvLiveSource.daddyLive,
+                  'DaddyLive',
+                  PhosphorIcons.broadcast()
+                ),
+                (
+                  _TvLiveSource.ethioSports,
+                  'Ethio Sports',
+                  PhosphorIcons.football()
+                ),
+              ]) ...<Widget>[
+                TvFocusable(
+                  semanticLabel: '${entry.$2} source',
+                  selected: _source == entry.$1,
+                  onActivate: () => _selectSource(entry.$1),
+                  focusScale: 1.025,
+                  child: _TvPill(
+                    icon: entry.$3,
+                    label: entry.$2,
+                    selected: _source == entry.$1,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              const SizedBox(width: 10),
               for (final entry in <(_TvLiveMode, String, IconData)>[
                 (
                   _TvLiveMode.channels,
