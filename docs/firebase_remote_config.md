@@ -47,6 +47,25 @@ An active theme's `logo_url` wins over `app_logo_url`, which wins over
 `cinemax_logo`, which wins over the bundled logo. The native Android/iOS launch
 splash remains bundled because it appears before Firebase initializes.
 
+## API and service configuration
+
+| Parameter | Firebase type | Default | Purpose |
+| --- | --- | --- | --- |
+| `tmdb_api_key` | String | Empty | TMDB API key override. When non-empty, overrides the local `.env` key at runtime. Falls back to `.env` when empty, unpublished, or offline. |
+| `tmdb_proxy` | String | Empty | Optional reverse proxy URL prefix for TMDB image and metadata requests. |
+| `flixquest_api_instances` | String | Empty | JSON array or `{"instances": [...]}` defining load-balanced FlixQuest scraper endpoints. |
+| `flixquest_api_url_v2` | String | Empty | Legacy single fallback URL for the scraper API. |
+
+## Ad network and banner configuration
+
+| Parameter | Firebase type | Default | Purpose |
+| --- | --- | --- | --- |
+| `banner_ad_network` | String | `native` | Toggles which ad network is active for in-app banner surfaces. Allowed values: `native` (hosted carousel banner), `unity` (Unity Ads banner), or `none` (hides banner ads completely). Only one network is shown at a time. |
+| `unity_game_id_android` | String | `5445375` | Unity Game ID for Android. Can be updated dynamically without publishing a new APK. |
+| `unity_banner_placement_id` | String | `Banner_Android` | Unity Banner Placement ID (Ad Unit). Defaults to `Banner_Android`. |
+| `unity_test_mode` | Boolean | `false` | Enables test mode for Unity Ads. Set to `true` for test impressions or development devices. |
+| `banners` | String | `{"banners":[]}` | JSON array or map controlling enabled native/hosted banners, sizes, aspect ratios, and surface placement rules. |
+
 ## Ready-to-paste complete catalog
 
 Create `occasional_theme` as a **String**, paste this JSON as its value, replace

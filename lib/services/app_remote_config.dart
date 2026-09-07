@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 
+import '../constants/api_constants.dart';
 import '../models/banner_ad.dart';
 import '../provider/app_dependency_provider.dart';
 
@@ -13,10 +14,15 @@ class AppRemoteConfig {
   static const legacyAppLogoKey = 'cinemax_logo';
   static const flixquestApiInstancesKey = 'flixquest_api_instances';
   static const flixquestApiUrlKey = 'flixquest_api_url_v2';
+  static const tmdbApiKey = 'tmdb_api_key';
   static const enableWatchNowKey = 'enable_stream';
   static const enableDownloadKey = 'enable_download';
   static const enableLiveTvKey = 'enable_live_tv';
   static const bannersKey = 'banners';
+  static const bannerAdNetworkKey = 'banner_ad_network';
+  static const unityGameIdAndroidKey = 'unity_game_id_android';
+  static const unityBannerPlacementIdKey = 'unity_banner_placement_id';
+  static const unityTestModeKey = 'unity_test_mode';
 
   /// Live TV used to ride on the OTT flag before it got a dedicated key.
   static const legacyEnableLiveTvKey = 'enable_ott';
@@ -40,6 +46,7 @@ class AppRemoteConfig {
       'change_log': '',
       flixquestApiInstancesKey: '',
       flixquestApiUrlKey: '',
+      tmdbApiKey: '',
       // Feature toggles ship enabled so a failed or offline fetch never hides
       // playback, downloads or Live TV.
       enableWatchNowKey: true,
@@ -47,6 +54,10 @@ class AppRemoteConfig {
       enableLiveTvKey: true,
       legacyEnableLiveTvKey: true,
       bannersKey: '{"banners":[]}',
+      bannerAdNetworkKey: 'native',
+      unityGameIdAndroidKey: '5445375',
+      unityBannerPlacementIdKey: 'Banner_Android',
+      unityTestModeKey: false,
     });
   }
 
@@ -101,6 +112,21 @@ class AppRemoteConfig {
     provider.setBannerConfigs(
         parseBannerConfigs(remoteConfig.getString(bannersKey)));
 
+    final bannerNetwork = remoteConfig.getString(bannerAdNetworkKey).trim();
+    provider.setBannerAdNetwork(
+      bannerNetwork.isNotEmpty ? bannerNetwork : 'native',
+    );
+
+    final unityGameId = remoteConfig.getString(unityGameIdAndroidKey).trim();
+    final unityPlacement =
+        remoteConfig.getString(unityBannerPlacementIdKey).trim();
+    final unityTestMode = remoteConfig.getBool(unityTestModeKey);
+    provider.setUnityAdsConfig(
+      gameIdAndroid: unityGameId.isNotEmpty ? unityGameId : null,
+      bannerPlacementId: unityPlacement.isNotEmpty ? unityPlacement : null,
+      testMode: unityTestMode,
+    );
+
     final instancesRaw = remoteConfig.getString(flixquestApiInstancesKey);
     final parsedInstances = parseApiInstances(instancesRaw);
     final legacyUrl = remoteConfig.getString(flixquestApiUrlKey).trim();
@@ -118,6 +144,10 @@ class AppRemoteConfig {
       changeLog: remoteConfig.getString('change_log'),
     );
     provider.tmdbProxy = remoteConfig.getString('tmdb_proxy');
+    final remoteTmdbKey = remoteConfig.getString(tmdbApiKey).trim();
+    if (remoteTmdbKey.isNotEmpty) {
+      TMDB_API_KEY = remoteTmdbKey;
+    }
   }
 
   static Map<String, BannerDisplayConfig> parseBannerConfigs(String rawJson) {

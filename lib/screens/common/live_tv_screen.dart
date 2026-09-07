@@ -11,7 +11,8 @@ import '../../models/live_tv.dart';
 import '../../provider/app_dependency_provider.dart';
 import '../../provider/settings_provider.dart';
 import '../../services/daddylive_service.dart';
-import '../../services/ethio_sports_service.dart';
+// EthioTV source (commented out - disabled):
+// import '../../services/ethio_sports_service.dart';
 import '../../services/analytics_service.dart';
 import '../../ui_components/app_ui_components.dart';
 import 'live_player.dart';
@@ -22,7 +23,8 @@ enum _ChannelScope { all, favorites, recent }
 
 enum _LiveTvMode { channels, schedule }
 
-enum _LiveTvSource { daddyLive, ethioSports }
+// EthioTV source (commented out - disabled):
+// enum _LiveTvSource { daddyLive, ethioSports }
 
 const _allCategoriesKey = '__all_categories__';
 
@@ -43,10 +45,12 @@ class ChannelList extends StatefulWidget {
 class _ChannelListState extends State<ChannelList> {
   static const _analyticsSurface = 'standard';
   final _daddyDatabase = LiveTVDatabaseController();
-  final _ethioDatabase = LiveTVDatabaseController(namespace: 'ethiosports');
+  // EthioTV source (commented out - disabled):
+  // final _ethioDatabase = LiveTVDatabaseController(namespace: 'ethiosports');
   final _searchController = TextEditingController();
   DaddyLiveService? _service;
-  EthioSportsService? _ethioService;
+  // EthioTV source (commented out - disabled):
+  // EthioSportsService? _ethioService;
   List<Channel> _channels = const <Channel>[];
   DaddyLiveEpg? _epg;
   Set<String> _favoriteIds = <String>{};
@@ -59,7 +63,8 @@ class _ChannelListState extends State<ChannelList> {
   Timer? _searchAnalyticsDebounce;
   _ChannelScope _scope = _ChannelScope.all;
   _LiveTvMode _mode = _LiveTvMode.channels;
-  _LiveTvSource _source = _LiveTvSource.daddyLive;
+  // EthioTV source (commented out - disabled):
+  // _LiveTvSource _source = _LiveTvSource.daddyLive;
   int _selectedDayIndex = 0;
 
   @override
@@ -75,7 +80,8 @@ class _ChannelListState extends State<ChannelList> {
   void dispose() {
     _searchAnalyticsDebounce?.cancel();
     _service?.close();
-    _ethioService?.close();
+    // EthioTV source (commented out - disabled):
+    // _ethioService?.close();
     _searchController.dispose();
     super.dispose();
   }
@@ -84,15 +90,16 @@ class _ChannelListState extends State<ChannelList> {
         baseUrl: context.read<AppDependencyProvider>().flixquestAPIURL,
       );
 
-  EthioSportsService _ethioApi() => _ethioService ??= EthioSportsService(
-        baseUrl: context.read<AppDependencyProvider>().flixquestAPIURL,
-      );
-
-  LiveTvService get _activeService =>
-      _source == _LiveTvSource.ethioSports ? _ethioApi() : _api();
-
-  LiveTVDatabaseController get _database =>
-      _source == _LiveTvSource.ethioSports ? _ethioDatabase : _daddyDatabase;
+  // EthioTV source (commented out - disabled):
+  // EthioSportsService _ethioApi() => _ethioService ??= EthioSportsService(
+  //       baseUrl: context.read<AppDependencyProvider>().flixquestAPIURLV2,
+  //     );
+  //
+  // LiveTvService get _activeService =>
+  //     _source == _LiveTvSource.ethioSports ? _ethioApi() : _api();
+  //
+  // LiveTVDatabaseController get _database =>
+  //     _source == _LiveTvSource.ethioSports ? _ethioDatabase : _daddyDatabase;
 
   AnalyticsService get _analytics => context.read<SettingsProvider>().analytics;
 
@@ -106,24 +113,20 @@ class _ChannelListState extends State<ChannelList> {
       });
     }
     try {
-      final favorites = await _database.getFavoriteIds();
-      final recent = await _database.getRecentIds();
+      final favorites = await _daddyDatabase.getFavoriteIds();
+      final recent = await _daddyDatabase.getRecentIds();
       List<Channel> channels;
       DaddyLiveEpg? epg;
-      if (_source == _LiveTvSource.daddyLive &&
-          !refresh &&
-          await _database.isCacheValid()) {
+      if (!refresh && await _daddyDatabase.isCacheValid()) {
         cacheHit = true;
-        channels = await _database.getCachedChannels();
-        epg = await _database.getCachedEpg();
+        channels = await _daddyDatabase.getCachedChannels();
+        epg = await _daddyDatabase.getCachedEpg();
       } else {
-        final catalog = await _activeService.getCatalog(refresh: refresh);
+        final catalog = await _api().getCatalog(refresh: refresh);
         channels = catalog.channels;
         epg = catalog.epg;
-        if (_source == _LiveTvSource.daddyLive) {
-          await _database.cacheChannels(channels);
-          await _database.cacheEpg(catalog.epg);
-        }
+        await _daddyDatabase.cacheChannels(channels);
+        await _daddyDatabase.cacheEpg(catalog.epg);
       }
       channels = channels.toList()..sort((a, b) => a.name.compareTo(b.name));
       if (!mounted) return;
@@ -144,8 +147,8 @@ class _ChannelListState extends State<ChannelList> {
         epgDayCount: epg?.days.length ?? 0,
       );
     } catch (error) {
-      final cached = await _database.getCachedChannels();
-      final cachedEpg = await _database.getCachedEpg();
+      final cached = await _daddyDatabase.getCachedChannels();
+      final cachedEpg = await _daddyDatabase.getCachedEpg();
       if (!mounted) return;
       setState(() {
         _channels = cached;
@@ -237,7 +240,7 @@ class _ChannelListState extends State<ChannelList> {
       _scheduleSections.fold(0, (sum, section) => sum + section.events.length);
 
   Future<void> _toggleFavorite(Channel channel) async {
-    final isFavorite = await _database.toggleFavorite(channel.id);
+    final isFavorite = await _daddyDatabase.toggleFavorite(channel.id);
     if (!mounted) return;
     setState(() {
       if (isFavorite) {
@@ -258,8 +261,8 @@ class _ChannelListState extends State<ChannelList> {
     final stopwatch = Stopwatch()..start();
     setState(() => _resolvingId = channel.id);
     try {
-      final stream = await _activeService.getStream(channel.id);
-      await _database.addRecent(channel.id);
+      final stream = await _api().getStream(channel.id);
+      await _daddyDatabase.addRecent(channel.id);
       if (!mounted) return;
       _analytics.trackLiveTVChannelView(
         channelName: channel.name,
@@ -291,16 +294,17 @@ class _ChannelListState extends State<ChannelList> {
             // Keep in-player switching independent from browse filters.
             channels: _channels,
             initialChannelId: channel.id,
-            service: _activeService,
+            service: _api(),
             analytics: _analytics,
             analyticsSurface: _analyticsSurface,
             scraperApiUrl:
                 context.read<AppDependencyProvider>().flixquestAPIURL,
-            onChannelSwitch: (switched) => _database.addRecent(switched.id),
+            onChannelSwitch: (switched) =>
+                _daddyDatabase.addRecent(switched.id),
           ),
         ),
       );
-      _recentIds = await _database.getRecentIds();
+      _recentIds = await _daddyDatabase.getRecentIds();
       if (mounted) setState(() {});
     } catch (error) {
       _analytics.trackLiveTVStreamResolution(
@@ -348,18 +352,19 @@ class _ChannelListState extends State<ChannelList> {
     );
   }
 
-  void _selectSource(_LiveTvSource source) {
-    if (source == _source) return;
-    setState(() {
-      _source = source;
-      _mode = _LiveTvMode.channels;
-      _selectedCategory = null;
-      _selectedDayIndex = 0;
-      _channels = const <Channel>[];
-      _epg = null;
-    });
-    _load();
-  }
+  // EthioTV source (commented out - disabled):
+  // void _selectSource(_LiveTvSource source) {
+  //   if (source == _source) return;
+  //   setState(() {
+  //     _source = source;
+  //     _mode = _LiveTvMode.channels;
+  //     _selectedCategory = null;
+  //     _selectedDayIndex = 0;
+  //     _channels = const <Channel>[];
+  //     _epg = null;
+  //   });
+  //   _load();
+  // }
 
   void _selectScope(_ChannelScope scope) {
     if (scope == _scope) return;
@@ -551,51 +556,45 @@ class _ChannelListState extends State<ChannelList> {
   }
 
   Widget _buildHeader() {
-    final colors = Theme.of(context).colorScheme;
     final isSchedule = _mode == _LiveTvMode.schedule;
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 10, 0, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerHighest.withValues(alpha: .6),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: <Widget>[
-                  _ModeTab(
-                    icon: PhosphorIcons.broadcast(),
-                    label: 'DaddyLive',
-                    selected: _source == _LiveTvSource.daddyLive,
-                    onTap: () => _selectSource(_LiveTvSource.daddyLive),
-                  ),
-                  _ModeTab(
-                    icon: PhosphorIcons.football(),
-                    label: 'Ethio Sports',
-                    selected: _source == _LiveTvSource.ethioSports,
-                    onTap: () => _selectSource(_LiveTvSource.ethioSports),
-                  ),
-                  const SizedBox(width: 8),
-                  _ModeTab(
-                    icon: PhosphorIcons.televisionSimple(),
-                    label: 'Channels',
-                    selected: !isSchedule,
-                    onTap: () => _selectMode(_LiveTvMode.channels),
-                  ),
-                  _ModeTab(
-                    icon: PhosphorIcons.calendarDots(),
-                    label: 'Schedule',
-                    selected: isSchedule,
-                    onTap: () => _selectMode(_LiveTvMode.schedule),
-                  ),
-                ],
+          // EthioTV source (commented out - disabled):
+          // _SegmentedTrack(
+          //   children: <Widget>[
+          //     _ModeTab(
+          //       icon: PhosphorIcons.broadcast(),
+          //       label: 'DaddyLive',
+          //       selected: _source == _LiveTvSource.daddyLive,
+          //       onTap: () => _selectSource(_LiveTvSource.daddyLive),
+          //     ),
+          //     _ModeTab(
+          //       icon: PhosphorIcons.football(),
+          //       label: 'Ethio Sports',
+          //       selected: _source == _LiveTvSource.ethioSports,
+          //       onTap: () => _selectSource(_LiveTvSource.ethioSports),
+          //     ),
+          //   ],
+          // ),
+          // const SizedBox(height: 10),
+          _SegmentedTrack(
+            children: <Widget>[
+              _ModeTab(
+                icon: PhosphorIcons.televisionSimple(),
+                label: 'Channels',
+                selected: !isSchedule,
+                onTap: () => _selectMode(_LiveTvMode.channels),
               ),
-            ),
+              _ModeTab(
+                icon: PhosphorIcons.calendarDots(),
+                label: 'Schedule',
+                selected: isSchedule,
+                onTap: () => _selectMode(_LiveTvMode.schedule),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           TextField(
@@ -806,6 +805,27 @@ class _ModeTab extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SegmentedTrack extends StatelessWidget {
+  const _SegmentedTrack({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: .6),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: children,
       ),
     );
   }

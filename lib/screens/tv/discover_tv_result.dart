@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import '../../functions/network.dart';
 import '../../models/tv.dart';
 import '../../provider/settings_provider.dart';
+import '../../video_providers/scraper_api.dart';
+import '../../widgets/hosted_ads_banner.dart';
 
 class DiscoverTVResult extends StatefulWidget {
   const DiscoverTVResult({required this.api, required this.page, super.key});
@@ -124,6 +126,14 @@ class _DiscoverTVResultState extends State<DiscoverTVResult> {
                         )
                       : Column(
                           children: [
+                            RemoteHostedAdsBanner(
+                              placement: 'discover_tv',
+                              loadAds: () => ScraperApi(
+                                context
+                                    .read<AppDependencyProvider>()
+                                    .flixquestAPIURL,
+                              ).getAds(),
+                            ),
                             Expanded(
                               child: viewType == 'grid'
                                   ? TVGridView(

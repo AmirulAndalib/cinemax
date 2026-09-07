@@ -8,6 +8,8 @@ import '../../provider/app_dependency_provider.dart';
 import '../../provider/settings_provider.dart';
 import '../../ui_components/app_ui_components.dart';
 import '../../ui_components/movie_ui_components.dart';
+import '../../video_providers/scraper_api.dart';
+import '../../widgets/hosted_ads_banner.dart';
 
 class DiscoverMovieResult extends StatefulWidget {
   const DiscoverMovieResult(
@@ -140,6 +142,14 @@ class _DiscoverMovieResultState extends State<DiscoverMovieResult> {
                         )
                       : Column(
                           children: [
+                            RemoteHostedAdsBanner(
+                              placement: 'discover_movies',
+                              loadAds: () => ScraperApi(
+                                context
+                                    .read<AppDependencyProvider>()
+                                    .flixquestAPIURL,
+                              ).getAds(),
+                            ),
                             Expanded(
                               child: viewType == 'grid'
                                   ? MovieGridView(

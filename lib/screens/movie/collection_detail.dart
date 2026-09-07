@@ -10,6 +10,8 @@ import '../../functions/network.dart';
 import '../../provider/app_dependency_provider.dart';
 import '../../provider/settings_provider.dart';
 import '../../ui_components/app_ui_components.dart';
+import '../../video_providers/scraper_api.dart';
+import '../../widgets/hosted_ads_banner.dart';
 import '/api/endpoints.dart';
 import '/constants/api_constants.dart';
 import '/models/movie.dart';
@@ -134,6 +136,14 @@ class CollectionDetailsWidgetState extends State<CollectionDetailsWidget>
                   ),
                   const SizedBox(height: 12),
                   _CollectionOverview(details: _details),
+                  const SizedBox(height: 28),
+                  RemoteHostedAdsBanner(
+                    placement: 'collection_detail',
+                    variant: HostedBannerVariant.tall,
+                    loadAds: () => ScraperApi(
+                      context.read<AppDependencyProvider>().flixquestAPIURL,
+                    ).getAds(),
+                  ),
                   const SizedBox(height: 28),
                   Text(
                     tr('movies'),

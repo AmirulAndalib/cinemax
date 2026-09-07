@@ -10,6 +10,8 @@ import '../../ui_components/movie_ui_components.dart';
 import '../../widgets/common_widgets.dart';
 import '../../ui_components/app_ui_components.dart';
 import '../common/search_view.dart';
+import '../../video_providers/scraper_api.dart';
+import '../../widgets/hosted_ads_banner.dart';
 
 class MainMoviesList extends StatefulWidget {
   final String api;
@@ -129,6 +131,14 @@ class MainMoviesListState extends State<MainMoviesList> {
                     )
                   : Column(
                       children: [
+                        RemoteHostedAdsBanner(
+                          placement: 'movie_list',
+                          loadAds: () => ScraperApi(
+                            context
+                                .read<AppDependencyProvider>()
+                                .flixquestAPIURL,
+                          ).getAds(),
+                        ),
                         Expanded(
                           child: Padding(
                             padding: const EdgeInsets.only(top: 8.0),

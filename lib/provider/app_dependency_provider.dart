@@ -8,6 +8,7 @@ import '../constants/api_constants.dart';
 import '../models/occasional_theme.dart';
 import '../models/banner_ad.dart';
 import '../preferences/app_dependency_preferences.dart';
+import '../services/unity_ads_service.dart';
 
 class AppDependencyProvider extends ChangeNotifier {
   final AppDependencies _preferences = AppDependencies();
@@ -61,6 +62,69 @@ class AppDependencyProvider extends ChangeNotifier {
   void setBannerConfigs(Map<String, BannerDisplayConfig> configs) {
     _bannerConfigs = Map.unmodifiable(configs);
     notifyListeners();
+  }
+
+  String _bannerAdNetwork = 'native';
+  String get bannerAdNetwork => _bannerAdNetwork;
+  bool get isUnityBannerActive => _bannerAdNetwork.trim().toLowerCase() == 'unity';
+  bool get isNativeBannerActive => _bannerAdNetwork.trim().toLowerCase() == 'native';
+
+  String _unityGameIdAndroid = UnityAdsService.fallbackAndroidGameId;
+  String get unityGameIdAndroid => _unityGameIdAndroid;
+
+  String _unityBannerPlacementId = UnityAdsService.fallbackBannerPlacementId;
+  String get unityBannerPlacementId => _unityBannerPlacementId;
+
+  bool _unityTestMode = false;
+  bool get unityTestMode => _unityTestMode;
+
+  void setBannerAdNetwork(String network) {
+    final sanitized = network.trim().toLowerCase();
+    if (_bannerAdNetwork != sanitized) {
+      _bannerAdNetwork = sanitized;
+      if (isUnityBannerActive) {
+        UnityAdsService.instance.initialize(
+          gameId: _unityGameIdAndroid,
+          testMode: _unityTestMode,
+        );
+      }
+      notifyListeners();
+    }
+  }
+
+  void setUnityAdsConfig({
+    String? gameIdAndroid,
+    String? bannerPlacementId,
+    bool? testMode,
+  }) {
+    bool changed = false;
+    if (gameIdAndroid != null && gameIdAndroid.trim().isNotEmpty) {
+      final trimmed = gameIdAndroid.trim();
+      if (_unityGameIdAndroid != trimmed) {
+        _unityGameIdAndroid = trimmed;
+        changed = true;
+      }
+    }
+    if (bannerPlacementId != null && bannerPlacementId.trim().isNotEmpty) {
+      final trimmed = bannerPlacementId.trim();
+      if (_unityBannerPlacementId != trimmed) {
+        _unityBannerPlacementId = trimmed;
+        changed = true;
+      }
+    }
+    if (testMode != null && _unityTestMode != testMode) {
+      _unityTestMode = testMode;
+      changed = true;
+    }
+    if (changed) {
+      if (isUnityBannerActive) {
+        UnityAdsService.instance.initialize(
+          gameId: _unityGameIdAndroid,
+          testMode: _unityTestMode,
+        );
+      }
+      notifyListeners();
+    }
   }
 
   bool _isForcedUpdate = false;

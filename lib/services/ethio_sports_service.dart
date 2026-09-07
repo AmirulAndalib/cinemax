@@ -59,7 +59,39 @@ class EthioSportsService implements LiveTvService {
       throw const DaddyLiveException(
           'The channel returned no playable stream.');
     }
-    return stream;
+    return DaddyLiveStream(
+      url: _absoluteUrl(stream.url),
+      headers: stream.headers,
+      embedUrl: stream.embedUrl,
+      expiresAt: stream.expiresAt,
+      mediaType: stream.mediaType,
+      clearKey: stream.clearKey,
+      title: stream.title,
+      variants: stream.variants
+          .map(
+            (variant) => LiveStreamVariant(
+              url: _absoluteUrl(variant.url),
+              headers: variant.headers,
+              mediaType: variant.mediaType,
+              clearKey: variant.clearKey,
+              title: variant.title,
+              logo: variant.logo,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  /// Stream URLs served by the flixquest scraper may come back scheme-relative
+  /// or rooted at the scraper itself. Resolve any non-absolute URL against the
+  /// flixquest scraper base URL so the player always gets a playable origin.
+  String _absoluteUrl(String url) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return trimmed;
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && uri.hasScheme) return trimmed;
+    if (trimmed.startsWith('//')) return 'https:$trimmed';
+    return '$_baseUrl/${trimmed.replaceFirst(RegExp(r'^/+'), '')}';
   }
 
   Channel _namespaceChannel(Channel channel) => Channel(

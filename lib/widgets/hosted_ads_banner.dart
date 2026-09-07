@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 import '../models/banner_ad.dart';
 import '../provider/app_dependency_provider.dart';
+import 'unity_banner_widget.dart';
 
 final CacheManager _adImageCache = CacheManager(
   Config(
@@ -17,12 +18,24 @@ final CacheManager _adImageCache = CacheManager(
   ),
 );
 
+enum HostedBannerVariant {
+  standard,
+  tall;
+
+  bool get isTall => this == HostedBannerVariant.tall;
+}
+
 class HostedAdsBanner extends StatelessWidget {
-  const HostedAdsBanner(
-      {required this.ads, required this.placement, super.key});
+  const HostedAdsBanner({
+    required this.ads,
+    required this.placement,
+    this.variant = HostedBannerVariant.standard,
+    super.key,
+  });
 
   final List<BannerAd> ads;
   final String placement;
+  final HostedBannerVariant variant;
 
   @override
   Widget build(BuildContext context) {
@@ -30,18 +43,28 @@ class HostedAdsBanner extends StatelessWidget {
         .where((ad) => ad.imageUrl.isNotEmpty && ad.targetUrl.isNotEmpty)
         .toList(growable: false);
     if (validAds.isEmpty) return const SizedBox.shrink();
+    var shownAds = validAds;
+    if (variant.isTall) {
+      final preferred =
+          validAds.where((ad) => ad.shape != 'wide').toList(growable: false);
+      if (preferred.isNotEmpty) shownAds = preferred;
+    }
     final dependencies = context.watch<AppDependencyProvider>();
-    final config = dependencies.bannerConfigFor(validAds.first.key);
-    final shape = config.shape ?? validAds.first.shape;
-    final aspectRatio = config.aspectRatio ?? validAds.first.aspectRatio;
-    final ratio = shape == 'square'
+    final config = dependencies.bannerConfigFor(shownAds.first.key);
+    final shape = config.shape ?? shownAds.first.shape;
+    final aspectRatio = config.aspectRatio ?? shownAds.first.aspectRatio;
+    var ratio = shape == 'square'
         ? 1.0
         : shape == 'portrait'
             ? .75
             : shape == 'wide'
                 ? 3.2
                 : aspectRatio;
+    if (variant.isTall && config.shape == null && config.aspectRatio == null) {
+      ratio = shape == 'square' || shape == 'portrait' ? ratio : 2.2;
+    }
 
+    final maxHeight = variant.isTall ? 420.0 : 320.0;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
       child: ClipRRect(
@@ -51,10 +74,11 @@ class HostedAdsBanner extends StatelessWidget {
             final width = (config.width ?? constraints.maxWidth)
                 .clamp(1.0, constraints.maxWidth)
                 .toDouble();
-            final height =
-                (config.height ?? width / ratio).clamp(72.0, 320.0).toDouble();
+            final height = (config.height ?? width / ratio)
+                .clamp(72.0, maxHeight)
+                .toDouble();
             return _CachedAdCarousel(
-              ads: validAds,
+              ads: shownAds,
               width: width,
               height: height,
             );
@@ -140,11 +164,16 @@ class _CachedAdCarouselState extends State<_CachedAdCarousel> {
 }
 
 class RemoteHostedAdsBanner extends StatefulWidget {
-  const RemoteHostedAdsBanner(
-      {required this.loadAds, required this.placement, super.key});
+  const RemoteHostedAdsBanner({
+    required this.loadAds,
+    required this.placement,
+    this.variant = HostedBannerVariant.standard,
+    super.key,
+  });
 
   final Future<List<BannerAd>> Function() loadAds;
   final String placement;
+  final HostedBannerVariant variant;
 
   @override
   State<RemoteHostedAdsBanner> createState() => _RemoteHostedAdsBannerState();
@@ -155,20 +184,36 @@ class _RemoteHostedAdsBannerState extends State<RemoteHostedAdsBanner> {
 
   @override
   Widget build(BuildContext context) {
+    final dependencies = context.watch<AppDependencyProvider>();
+
+    if (dependencies.isUnityBannerActive) {
+      return UnityBannerWidget(
+        placement: widget.placement,
+        placementId: dependencies.unityBannerPlacementId,
+      );
+    }
+
+    if (!dependencies.isNativeBannerActive) {
+      return const SizedBox.shrink();
+    }
+
     return FutureBuilder<List<BannerAd>>(
       future: _adsFuture,
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return const SizedBox.shrink();
         }
-        final dependencies = context.watch<AppDependencyProvider>();
         final ads = snapshot.data!.where((ad) {
           final backendPlacement =
               ad.placements.isEmpty || ad.placements.contains(widget.placement);
           return backendPlacement &&
               dependencies.isBannerEnabled(ad.key, widget.placement);
         }).toList(growable: false);
-        return HostedAdsBanner(ads: ads, placement: widget.placement);
+        return HostedAdsBanner(
+          ads: ads,
+          placement: widget.placement,
+          variant: widget.variant,
+        );
       },
     );
   }

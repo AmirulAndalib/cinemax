@@ -7,6 +7,9 @@ import 'package:provider/provider.dart';
 import '/api/endpoints.dart';
 import '/widgets/movie_widgets.dart';
 import '/models/genres.dart';
+import '/provider/app_dependency_provider.dart';
+import '/video_providers/scraper_api.dart';
+import '/widgets/hosted_ads_banner.dart';
 
 class GenreMovies extends StatelessWidget {
   final Genres genres;
@@ -34,11 +37,24 @@ class GenreMovies extends StatelessWidget {
           },
         ),
       ),
-      body: ParticularGenreMovies(
-        includeAdult: Provider.of<SettingsProvider>(context).isAdult,
-        genreId: genres.genreID!,
-        api: Endpoints.getMoviesForGenre(genres.genreID!, 1, lang),
-        watchRegion: Provider.of<SettingsProvider>(context).defaultCountry,
+      body: Column(
+        children: <Widget>[
+          RemoteHostedAdsBanner(
+            placement: 'genre_movies',
+            loadAds: () => ScraperApi(
+              context.read<AppDependencyProvider>().flixquestAPIURL,
+            ).getAds(),
+          ),
+          Expanded(
+            child: ParticularGenreMovies(
+              includeAdult: Provider.of<SettingsProvider>(context).isAdult,
+              genreId: genres.genreID!,
+              api: Endpoints.getMoviesForGenre(genres.genreID!, 1, lang),
+              watchRegion:
+                  Provider.of<SettingsProvider>(context).defaultCountry,
+            ),
+          ),
+        ],
       ),
     );
   }

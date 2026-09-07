@@ -13,6 +13,8 @@ import '../constants/app_constants.dart';
 import '../functions/function.dart';
 import '../provider/app_dependency_provider.dart';
 import '../ui_components/app_ui_components.dart';
+import '../video_providers/scraper_api.dart';
+import '../widgets/hosted_ads_banner.dart';
 import '/constants/api_constants.dart';
 import '/functions/network.dart';
 import '/models/images.dart';
@@ -186,6 +188,15 @@ class _PersonDetailViewState extends State<PersonDetailView>
                   child: _buildSelectedTab(),
                 ),
               ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: RemoteHostedAdsBanner(
+              placement: 'person_detail',
+              variant: HostedBannerVariant.tall,
+              loadAds: () => ScraperApi(
+                context.read<AppDependencyProvider>().flixquestAPIURL,
+              ).getAds(),
             ),
           ),
         ],

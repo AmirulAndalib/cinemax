@@ -11,6 +11,8 @@ import '../../functions/network.dart';
 import '../../widgets/common_widgets.dart';
 import '../../ui_components/app_ui_components.dart';
 import '../common/search_view.dart';
+import '../../video_providers/scraper_api.dart';
+import '../../widgets/hosted_ads_banner.dart';
 
 class MainTVList extends StatefulWidget {
   final String api;
@@ -118,6 +120,14 @@ class MainTVListState extends State<MainTVList> {
                     )
                   : Column(
                       children: [
+                        RemoteHostedAdsBanner(
+                          placement: 'tv_list',
+                          loadAds: () => ScraperApi(
+                            context
+                                .read<AppDependencyProvider>()
+                                .flixquestAPIURL,
+                          ).getAds(),
+                        ),
                         Expanded(
                           child: Padding(
                             padding: const EdgeInsets.only(top: 8.0),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:flixquest/constants/api_constants.dart';
 import 'package:flixquest/constants/app_constants.dart';
 import 'package:flixquest/provider/app_dependency_provider.dart';
 import 'package:flixquest/services/app_remote_config.dart';
@@ -250,6 +251,54 @@ void main() {
       expect(provider.flixquestAPIURL, 'https://legacy-only.example.com');
 
       provider.dispose();
+    });
+  });
+
+  group('TMDB_API_KEY Remote Config fallback and override', () {
+    tearDown(() {
+      // Restore fallback to .env
+      TMDB_API_KEY = '';
+    });
+
+    test('initially falls back to .env key when remote key is not provided or empty', () {
+      final mockConfig = FakeFirebaseRemoteConfig();
+      mockConfig.setMockString('tmdb_api_key', '');
+
+      final provider = AppDependencyProvider();
+      AppRemoteConfig.apply(mockConfig, provider);
+
+      expect(TMDB_API_KEY, 'test_tmdb');
+      provider.dispose();
+    });
+
+    test('retains .env key when remote key is whitespace only', () {
+      final mockConfig = FakeFirebaseRemoteConfig();
+      mockConfig.setMockString('tmdb_api_key', '   ');
+
+      final provider = AppDependencyProvider();
+      AppRemoteConfig.apply(mockConfig, provider);
+
+      expect(TMDB_API_KEY, 'test_tmdb');
+      provider.dispose();
+    });
+
+    test('overrides TMDB_API_KEY when remote config supplies a non-empty key', () {
+      final mockConfig = FakeFirebaseRemoteConfig();
+      mockConfig.setMockString('tmdb_api_key', 'remote_override_key_12345');
+
+      final provider = AppDependencyProvider();
+      AppRemoteConfig.apply(mockConfig, provider);
+
+      expect(TMDB_API_KEY, 'remote_override_key_12345');
+      provider.dispose();
+    });
+
+    test('clearing TMDB_API_KEY restores fallback to .env', () {
+      TMDB_API_KEY = 'temporary_key';
+      expect(TMDB_API_KEY, 'temporary_key');
+
+      TMDB_API_KEY = '';
+      expect(TMDB_API_KEY, 'test_tmdb');
     });
   });
 }

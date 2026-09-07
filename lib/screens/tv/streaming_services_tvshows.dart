@@ -6,6 +6,9 @@ import 'package:provider/provider.dart';
 import '/widgets/tv_widgets.dart';
 import 'package:flutter/material.dart';
 import '/api/endpoints.dart';
+import '/provider/app_dependency_provider.dart';
+import '/video_providers/scraper_api.dart';
+import '/widgets/hosted_ads_banner.dart';
 
 class StreamingServicesTVShows extends StatelessWidget {
   final int providerId;
@@ -29,10 +32,22 @@ class StreamingServicesTVShows extends StatelessWidget {
           },
         ),
       ),
-      body: ParticularStreamingServiceTVShows(
-        includeAdult: Provider.of<SettingsProvider>(context).isAdult,
-        providerID: providerId,
-        api: Endpoints.watchProvidersTVShows(providerId, 1, lang),
+      body: Column(
+        children: <Widget>[
+          RemoteHostedAdsBanner(
+            placement: 'streaming_tv',
+            loadAds: () => ScraperApi(
+              context.read<AppDependencyProvider>().flixquestAPIURL,
+            ).getAds(),
+          ),
+          Expanded(
+            child: ParticularStreamingServiceTVShows(
+              includeAdult: Provider.of<SettingsProvider>(context).isAdult,
+              providerID: providerId,
+              api: Endpoints.watchProvidersTVShows(providerId, 1, lang),
+            ),
+          ),
+        ],
       ),
     );
   }

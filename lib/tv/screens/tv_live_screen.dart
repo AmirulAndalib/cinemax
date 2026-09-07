@@ -14,7 +14,8 @@ import '../../provider/settings_provider.dart';
 import '../../screens/common/live_player.dart';
 import '../../services/analytics_service.dart';
 import '../../services/daddylive_service.dart';
-import '../../services/ethio_sports_service.dart';
+// EthioTV source (commented out - disabled):
+// import '../../services/ethio_sports_service.dart';
 import '../app/tv_design.dart';
 import '../focus/tv_focusable.dart';
 import '../player/tv_player_screen.dart';
@@ -24,7 +25,8 @@ enum _TvLiveScope { all, favorites, recent }
 
 enum _TvLiveMode { channels, schedule }
 
-enum _TvLiveSource { daddyLive, ethioSports }
+// EthioTV source (commented out - disabled):
+// enum _TvLiveSource { daddyLive, ethioSports }
 
 class TvLiveScreen extends StatefulWidget {
   const TvLiveScreen({required this.metrics, super.key});
@@ -38,19 +40,22 @@ class TvLiveScreen extends StatefulWidget {
 class _TvLiveScreenState extends State<TvLiveScreen> {
   static const _analyticsSurface = 'tv';
   final _daddyDatabase = LiveTVDatabaseController();
-  final _ethioDatabase = LiveTVDatabaseController(namespace: 'ethiosports');
+  // EthioTV source (commented out - disabled):
+  // final _ethioDatabase = LiveTVDatabaseController(namespace: 'ethiosports');
   final _searchController = TextEditingController();
   late final FocusNode _searchFocus;
   late final FocusNode _firstChannelFocus;
   DaddyLiveService? _service;
-  EthioSportsService? _ethioService;
+  // EthioTV source (commented out - disabled):
+  // EthioSportsService? _ethioService;
   List<Channel> _channels = const <Channel>[];
   DaddyLiveEpg? _epg;
   Set<String> _favorites = <String>{};
   List<String> _recent = const <String>[];
   _TvLiveScope _scope = _TvLiveScope.all;
   _TvLiveMode _mode = _TvLiveMode.channels;
-  _TvLiveSource _source = _TvLiveSource.daddyLive;
+  // EthioTV source (commented out - disabled):
+  // _TvLiveSource _source = _TvLiveSource.daddyLive;
   String? _category;
   int _selectedDayIndex = 0;
   String? _resolvingId;
@@ -97,7 +102,8 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
   void dispose() {
     _searchAnalyticsDebounce?.cancel();
     _service?.close();
-    _ethioService?.close();
+    // EthioTV source (commented out - disabled):
+    // _ethioService?.close();
     _searchController.dispose();
     _searchFocus.dispose();
     _firstChannelFocus.dispose();
@@ -108,15 +114,16 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
         baseUrl: context.read<AppDependencyProvider>().flixquestAPIURL,
       );
 
-  EthioSportsService _ethioApi() => _ethioService ??= EthioSportsService(
-        baseUrl: context.read<AppDependencyProvider>().flixquestAPIURL,
-      );
-
-  LiveTvService get _activeService =>
-      _source == _TvLiveSource.ethioSports ? _ethioApi() : _api();
-
-  LiveTVDatabaseController get _database =>
-      _source == _TvLiveSource.ethioSports ? _ethioDatabase : _daddyDatabase;
+  // EthioTV source (commented out - disabled):
+  // EthioSportsService _ethioApi() => _ethioService ??= EthioSportsService(
+  //       baseUrl: context.read<AppDependencyProvider>().flixquestAPIURLV2,
+  //     );
+  //
+  // LiveTvService get _activeService =>
+  //     _source == _TvLiveSource.ethioSports ? _ethioApi() : _api();
+  //
+  // LiveTVDatabaseController get _database =>
+  //     _source == _TvLiveSource.ethioSports ? _ethioDatabase : _daddyDatabase;
 
   AnalyticsService get _analytics => context.read<SettingsProvider>().analytics;
 
@@ -130,24 +137,20 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
       });
     }
     try {
-      final favorites = await _database.getFavoriteIds();
-      final recent = await _database.getRecentIds();
+      final favorites = await _daddyDatabase.getFavoriteIds();
+      final recent = await _daddyDatabase.getRecentIds();
       List<Channel> channels;
       DaddyLiveEpg? epg;
-      if (_source == _TvLiveSource.daddyLive &&
-          !refresh &&
-          await _database.isCacheValid()) {
+      if (!refresh && await _daddyDatabase.isCacheValid()) {
         cacheHit = true;
-        channels = await _database.getCachedChannels();
-        epg = await _database.getCachedEpg();
+        channels = await _daddyDatabase.getCachedChannels();
+        epg = await _daddyDatabase.getCachedEpg();
       } else {
-        final catalog = await _activeService.getCatalog(refresh: refresh);
+        final catalog = await _api().getCatalog(refresh: refresh);
         channels = catalog.channels;
         epg = catalog.epg;
-        if (_source == _TvLiveSource.daddyLive) {
-          await _database.cacheChannels(channels);
-          await _database.cacheEpg(epg);
-        }
+        await _daddyDatabase.cacheChannels(channels);
+        await _daddyDatabase.cacheEpg(epg);
       }
       channels = channels.toList()..sort((a, b) => a.name.compareTo(b.name));
       if (!mounted) return;
@@ -169,8 +172,8 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
         epgDayCount: epg?.days.length ?? 0,
       );
     } catch (error) {
-      final cached = await _database.getCachedChannels();
-      final cachedEpg = await _database.getCachedEpg();
+      final cached = await _daddyDatabase.getCachedChannels();
+      final cachedEpg = await _daddyDatabase.getCachedEpg();
       if (!mounted) return;
       setState(() {
         _channels = cached;
@@ -259,7 +262,7 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
       _scheduleSections.fold(0, (sum, section) => sum + section.events.length);
 
   Future<void> _toggleFavorite(Channel channel) async {
-    final value = await _database.toggleFavorite(channel.id);
+    final value = await _daddyDatabase.toggleFavorite(channel.id);
     if (!mounted) return;
     setState(() {
       if (value) {
@@ -280,8 +283,8 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
     final stopwatch = Stopwatch()..start();
     setState(() => _resolvingId = channel.id);
     try {
-      final stream = await _activeService.getStream(channel.id);
-      await _database.addRecent(channel.id);
+      final stream = await _api().getStream(channel.id);
+      await _daddyDatabase.addRecent(channel.id);
       if (!mounted) return;
       _analytics.trackLiveTVChannelView(
         channelName: channel.name,
@@ -314,19 +317,20 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
               // Keep in-player switching independent from browse filters.
               channels: _channels,
               initialChannelId: channel.id,
-              service: _activeService,
+              service: _api(),
               analytics: _analytics,
               analyticsSurface: _analyticsSurface,
               scraperApiUrl:
                   context.read<AppDependencyProvider>().flixquestAPIURL,
-              onChannelSwitch: (switched) => _database.addRecent(switched.id),
+              onChannelSwitch: (switched) =>
+                  _daddyDatabase.addRecent(switched.id),
               enableCast: false,
               useTvControls: true,
             ),
           ),
         ),
       );
-      _recent = await _database.getRecentIds();
+      _recent = await _daddyDatabase.getRecentIds();
       if (mounted) setState(() {});
     } catch (error) {
       _analytics.trackLiveTVStreamResolution(
@@ -394,19 +398,20 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
     );
   }
 
-  void _selectSource(_TvLiveSource source) {
-    if (source == _source) return;
-    setState(() {
-      _source = source;
-      _mode = _TvLiveMode.channels;
-      _category = null;
-      _selectedDayIndex = 0;
-      _channels = const <Channel>[];
-      _epg = null;
-      _initialChannelFocusRequested = false;
-    });
-    _load();
-  }
+  // EthioTV source (commented out - disabled):
+  // void _selectSource(_TvLiveSource source) {
+  //   if (source == _source) return;
+  //   setState(() {
+  //     _source = source;
+  //     _mode = _TvLiveMode.channels;
+  //     _category = null;
+  //     _selectedDayIndex = 0;
+  //     _channels = const <Channel>[];
+  //     _epg = null;
+  //     _initialChannelFocusRequested = false;
+  //   });
+  //   _load();
+  // }
 
   void _selectScope(_TvLiveScope scope) {
     if (scope == _scope) return;
@@ -547,86 +552,77 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        // EthioTV source (commented out - disabled):
+        // _TvSegmentedTrack(
+        //   fill: true,
+        //   options: <_TvSegmentedOption>[
+        //     _TvSegmentedOption(
+        //       icon: PhosphorIcons.broadcast(),
+        //       label: 'DaddyLive',
+        //       semanticLabel: 'DaddyLive source',
+        //       selected: _source == _TvLiveSource.daddyLive,
+        //       onActivate: () => _selectSource(_TvLiveSource.daddyLive),
+        //     ),
+        //     _TvSegmentedOption(
+        //       icon: PhosphorIcons.football(),
+        //       label: 'Ethio Sports',
+        //       semanticLabel: 'Ethio Sports source',
+        //       selected: _source == _TvLiveSource.ethioSports,
+        //       onActivate: () => _selectSource(_TvLiveSource.ethioSports),
+        //     ),
+        //   ],
+        // ),
+        // const SizedBox(height: 8),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
           child: Row(
             children: <Widget>[
-              for (final entry in <(_TvLiveSource, String, IconData)>[
-                (
-                  _TvLiveSource.daddyLive,
-                  'DaddyLive',
-                  PhosphorIcons.broadcast()
-                ),
-                (
-                  _TvLiveSource.ethioSports,
-                  'Ethio Sports',
-                  PhosphorIcons.football()
-                ),
-              ]) ...<Widget>[
-                TvFocusable(
-                  semanticLabel: '${entry.$2} source',
-                  selected: _source == entry.$1,
-                  onActivate: () => _selectSource(entry.$1),
-                  focusScale: 1.025,
-                  child: _TvPill(
-                    icon: entry.$3,
-                    label: entry.$2,
-                    selected: _source == entry.$1,
+              _TvSegmentedTrack(
+                options: <_TvSegmentedOption>[
+                  _TvSegmentedOption(
+                    icon: PhosphorIcons.televisionSimple(),
+                    label: 'Channels',
+                    semanticLabel: 'Channels view',
+                    selected: _mode == _TvLiveMode.channels,
+                    onActivate: () => _selectMode(_TvLiveMode.channels),
                   ),
-                ),
-                const SizedBox(width: 8),
-              ],
-              const SizedBox(width: 10),
-              for (final entry in <(_TvLiveMode, String, IconData)>[
-                (
-                  _TvLiveMode.channels,
-                  'Channels',
-                  PhosphorIcons.televisionSimple()
-                ),
-                (
-                  _TvLiveMode.schedule,
-                  'Schedule',
-                  PhosphorIcons.calendarDots()
-                ),
-              ]) ...<Widget>[
-                TvFocusable(
-                  semanticLabel: '${entry.$2} view',
-                  selected: _mode == entry.$1,
-                  onActivate: () => _selectMode(entry.$1),
-                  focusScale: 1.025,
-                  child: _TvPill(
-                    icon: entry.$3,
-                    label: entry.$2,
-                    selected: _mode == entry.$1,
+                  _TvSegmentedOption(
+                    icon: PhosphorIcons.calendarDots(),
+                    label: 'Schedule',
+                    semanticLabel: 'Schedule view',
+                    selected: _mode == _TvLiveMode.schedule,
+                    onActivate: () => _selectMode(_TvLiveMode.schedule),
                   ),
-                ),
-                const SizedBox(width: 8),
-              ],
-              if (!isSchedule) ...<Widget>[
-                const SizedBox(width: 10),
-                for (final entry in <(_TvLiveScope, String, IconData)>[
-                  (_TvLiveScope.all, 'All', PhosphorIcons.broadcast()),
-                  (_TvLiveScope.favorites, 'Favorites', PhosphorIcons.heart()),
-                  (
-                    _TvLiveScope.recent,
-                    'Recent',
-                    PhosphorIcons.clockCounterClockwise()
-                  ),
-                ]) ...<Widget>[
-                  TvFocusable(
-                    semanticLabel: '${entry.$2} channels',
-                    selected: _scope == entry.$1,
-                    onActivate: () => _selectScope(entry.$1),
-                    focusScale: 1.025,
-                    child: _TvPill(
-                      icon: entry.$3,
-                      label: entry.$2,
-                      selected: _scope == entry.$1,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
                 ],
+              ),
+              if (!isSchedule) ...<Widget>[
+                const SizedBox(width: 14),
+                _TvSegmentedTrack(
+                  options: <_TvSegmentedOption>[
+                    _TvSegmentedOption(
+                      icon: PhosphorIcons.broadcast(),
+                      label: 'All',
+                      semanticLabel: 'All channels',
+                      selected: _scope == _TvLiveScope.all,
+                      onActivate: () => _selectScope(_TvLiveScope.all),
+                    ),
+                    _TvSegmentedOption(
+                      icon: PhosphorIcons.heart(),
+                      label: 'Favorites',
+                      semanticLabel: 'Favorites channels',
+                      selected: _scope == _TvLiveScope.favorites,
+                      onActivate: () => _selectScope(_TvLiveScope.favorites),
+                    ),
+                    _TvSegmentedOption(
+                      icon: PhosphorIcons.clockCounterClockwise(),
+                      label: 'Recent',
+                      semanticLabel: 'Recent channels',
+                      selected: _scope == _TvLiveScope.recent,
+                      onActivate: () => _selectScope(_TvLiveScope.recent),
+                    ),
+                  ],
+                ),
               ],
             ],
           ),
@@ -865,6 +861,113 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
     return TvStatePanel.error(
       onRetry: _load,
       message: _error ?? 'Live TV is currently unavailable.',
+    );
+  }
+}
+
+class _TvSegmentedOption {
+  const _TvSegmentedOption({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onActivate,
+    this.semanticLabel,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? semanticLabel;
+  final bool selected;
+  final VoidCallback onActivate;
+}
+
+class _TvSegmentedTrack extends StatelessWidget {
+  // EthioTV source (commented out - disabled): full-width `fill: true` tracks
+  // were only used by the Ethio source selector.
+  const _TvSegmentedTrack({required this.options});
+
+  final List<_TvSegmentedOption> options;
+
+  // EthioTV source (commented out - disabled):
+  // final bool fill;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final cells = <Widget>[
+      for (var index = 0; index < options.length; index++)
+        Padding(
+          padding: EdgeInsets.only(left: index == 0 ? 0 : 6),
+          child: TvFocusable(
+            semanticLabel: options[index].semanticLabel ?? options[index].label,
+            selected: options[index].selected,
+            onActivate: options[index].onActivate,
+            focusScale: 1.03,
+            borderRadius: const BorderRadius.all(Radius.circular(10)),
+            child: _TvSegmentCell(
+              icon: options[index].icon,
+              label: options[index].label,
+              selected: options[index].selected,
+            ),
+          ),
+        ),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: cells),
+    );
+  }
+}
+
+class _TvSegmentCell extends StatelessWidget {
+  const _TvSegmentCell({
+    required this.icon,
+    required this.label,
+    required this.selected,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      decoration: BoxDecoration(
+        color: selected
+            ? colors.primary.withValues(alpha: 0.2)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Icon(
+            icon,
+            size: 21,
+            color: selected ? colors.primary : colors.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: colors.onSurface,
+              fontFamily: selected ? 'FigtreeSB' : 'Figtree',
+              fontSize: 17,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
