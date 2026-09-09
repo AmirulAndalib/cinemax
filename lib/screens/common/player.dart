@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use
 
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flixquest/models/tv_stream_metadata.dart';
 import 'package:flixquest/models/wellness.dart';
@@ -13,6 +14,7 @@ import '../../video_providers/names.dart';
 import '../../video_providers/provider_loader.dart';
 import '../../video_providers/common.dart';
 import '../../functions/video_utils.dart';
+import '../../functions/network.dart';
 import '../../functions/player_subtitle_configuration.dart';
 import '../../functions/subtitle_options.dart';
 import '/constants/app_constants.dart';
@@ -28,6 +30,7 @@ import '../../provider/settings_provider.dart';
 import '../../provider/offline_download_provider.dart';
 import '../../provider/app_dependency_provider.dart';
 import '../../constants/api_constants.dart';
+import '../../api/endpoints.dart';
 import '../../ui_components/app_ui_components.dart';
 import '../../services/stream_intro_service.dart';
 import '../../services/introdb_service.dart';
@@ -159,6 +162,10 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
   EpisodeMetadata? _tvNextEpisode;
   int? _tvNextEpisodeCountdown;
   _TvPlayerMenuData? _tvMenu;
+  int? _portraitBrowsedSeasonNumber;
+  bool _portraitSeasonLoading = false;
+  Orientation? _lastScreenOrientation;
+  bool _landscapeFullscreenRequestPending = false;
 
   late SettingsProvider settings;
 
@@ -2406,7 +2413,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       MaterialPageRoute<void>(
         builder: (_) => TVVideoLoader(
           download: false,
-          useTvPlayer: true,
+          useTvPlayer: widget.useTvControls,
           onTvPlayerExit: widget.onTvPlayerExit,
           metadata: _metadataForTvEpisode(episode),
         ),
@@ -2422,7 +2429,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
       MaterialPageRoute<void>(
         builder: (_) => MovieVideoLoader(
           download: false,
-          useTvPlayer: true,
+          useTvPlayer: widget.useTvControls,
           onTvPlayerExit: widget.onTvPlayerExit,
           metadata: MovieStreamMetadata(
             movieId: movie.movieId,
@@ -2811,6 +2818,24 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    _handleScreenOrientation(context);
+    if (_isPortraitInlineLayout(context)) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _exitPlayer();
+        },
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          body: _buildPortraitInlineLayout(context),
+          floatingActionButton: FloatingActionButton.small(
+            tooltip: tr('video_source'),
+            onPressed: _showExternalPlayerSheet,
+            child: Icon(PhosphorIcons.arrowSquareOut()),
+          ),
+        ),
+      );
+    }
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -2864,6 +2889,333 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
               ),
       ),
     );
+  }
+
+  void _handleScreenOrientation(BuildContext context) {
+    final orientation = MediaQuery.of(context).orientation;
+    final changed = _lastScreenOrientation != orientation;
+    _lastScreenOrientation = orientation;
+
+    if (orientation == Orientation.portrait) {
+      _landscapeFullscreenRequestPending = false;
+      return;
+    }
+    if (!changed ||
+        widget.useTvControls ||
+        _betterPlayerController.isFullScreen ||
+        _landscapeFullscreenRequestPending) {
+      return;
+    }
+
+    _landscapeFullscreenRequestPending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _landscapeFullscreenRequestPending = false;
+      if (MediaQuery.of(context).orientation == Orientation.landscape &&
+          !_betterPlayerController.isFullScreen) {
+        _betterPlayerController.enterFullScreen();
+      }
+    });
+  }
+
+  bool _isPortraitInlineLayout(BuildContext context) {
+    return !widget.useTvControls &&
+        MediaQuery.orientationOf(context) == Orientation.portrait &&
+        !_betterPlayerController.isFullScreen;
+  }
+
+  Widget _buildPortraitInlineLayout(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final episodes = widget.tvMetadata?.seasonEpisodes ?? _contentMenuEpisodes;
+    final recommendations = _contentMenuRecommendations;
+    final isTv = widget.mediaType == MediaType.tvShow;
+    final title = isTv
+        ? widget.tvMetadata?.seriesName ?? ''
+        : widget.movieMetadata?.movieName ?? '';
+
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: BetterPlayer(
+              controller: _betterPlayerController,
+              key: _betterPlayerKey,
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+              children: [
+                if (title.isNotEmpty)
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      color: colors.onSurface,
+                      fontFamily: 'FigtreeSB',
+                    ),
+                  ),
+                if (isTv && episodes.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  _buildPortraitSectionHeader(
+                    context,
+                    icon: PhosphorIcons.playlist(),
+                    title: tr(
+                      'season_episodes',
+                      namedArgs: {
+                        'season':
+                            '${widget.tvMetadata?.seasonNumber ?? episodes.first.seasonNumber}',
+                      },
+                    ),
+                    subtitle: tr(
+                      'episodes_count',
+                      namedArgs: {'count': '${episodes.length}'},
+                    ),
+                    action: (widget.tvMetadata?.allSeasons == null ||
+                            (widget.tvMetadata?.allSeasons?.length ?? 0) > 1)
+                        ? IconButton(
+                            tooltip: tr('select_season'),
+                            onPressed: _portraitSeasonLoading
+                                ? null
+                                : _showPortraitSeasonPicker,
+                            icon: _portraitSeasonLoading
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(PhosphorIcons.stack()),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(height: 8),
+                  ...episodes.map((episode) {
+                    final current = episode.episodeNumber ==
+                            widget.tvMetadata?.episodeNumber &&
+                        episode.seasonNumber == widget.tvMetadata?.seasonNumber;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: PlayerChoiceCard(
+                        title:
+                            '${episode.episodeNumber}. ${episode.episodeName}',
+                        subtitle: _portraitEpisodeSubtitle(episode),
+                        description: episode.overview,
+                        selected: current,
+                        thumbnail: _PortraitMediaThumbnail(
+                          path: episode.stillPath,
+                          width: 124,
+                          height: 76,
+                          fallbackIcon: PhosphorIcons.filmStrip(),
+                        ),
+                        onTap: current ? null : () => _playTvEpisode(episode),
+                      ),
+                    );
+                  }),
+                ] else if (!isTv && recommendations.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  _buildPortraitSectionHeader(
+                    context,
+                    icon: PhosphorIcons.sparkle(),
+                    title: tr('recommended_movies'),
+                    subtitle: tr('more_recommendations'),
+                  ),
+                  const SizedBox(height: 8),
+                  ...recommendations.map((movie) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: PlayerChoiceCard(
+                          title: movie.title,
+                          subtitle: _portraitMovieSubtitle(movie),
+                          description: movie.overview,
+                          thumbnail: _PortraitMediaThumbnail(
+                            path: movie.backdropPath ?? movie.posterPath,
+                            width: 124,
+                            height: 76,
+                            fallbackIcon: PhosphorIcons.filmStrip(),
+                          ),
+                          onTap: () => _playTvMovie(movie),
+                        ),
+                      )),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPortraitSectionHeader(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    Widget? action,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(icon, size: 21, color: colors.primary),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontFamily: 'FigtreeSB',
+                ),
+          ),
+        ),
+        Text(
+          subtitle,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+        ),
+        if (action != null) action,
+      ],
+    );
+  }
+
+  Future<void> _showPortraitSeasonPicker() async {
+    final metadata = widget.tvMetadata;
+    if (!mounted || metadata == null) {
+      return;
+    }
+
+    if (metadata.allSeasons?.isNotEmpty != true && metadata.tvId != null) {
+      setState(() => _portraitSeasonLoading = true);
+      try {
+        final details = await fetchTVDetails(
+          Endpoints.tvDetailsUrl(metadata.tvId!, settings.appLanguage),
+          settings.enableProxy,
+          _appDependencies.tmdbProxy,
+        );
+        final loadedSeasons = details.seasons;
+        if (loadedSeasons != null && loadedSeasons.isNotEmpty) {
+          metadata.allSeasons = loadedSeasons
+              .map(SeasonMetadata.fromSeason)
+              .where((season) => season.seasonNumber >= 0)
+              .toList(growable: false);
+        }
+      } catch (error) {
+        debugPrint(
+            '[PlayerContentMenu] portrait season metadata failed: $error');
+      } finally {
+        if (mounted) setState(() => _portraitSeasonLoading = false);
+      }
+    }
+
+    final seasons = metadata.allSeasons;
+    if (!mounted || seasons == null || seasons.length < 2) return;
+
+    final selectedSeason = await showModalBottomSheet<int>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final colors = Theme.of(sheetContext).colorScheme;
+        final browsedSeason = _portraitBrowsedSeasonNumber ??
+            metadata.seasonEpisodes?.firstOrNull?.seasonNumber ??
+            metadata.seasonNumber;
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 560),
+          child: ListView.separated(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+            itemCount: seasons.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 4),
+            itemBuilder: (context, index) {
+              final season = seasons[index];
+              final selected = season.seasonNumber == browsedSeason;
+              return PlayerChoiceCard(
+                title: season.seasonName,
+                subtitle: tr(
+                  'episodes_count',
+                  namedArgs: {'count': '${season.episodeCount}'},
+                ),
+                description: season.overview,
+                selected: selected,
+                thumbnail: PlayerThumbnail(
+                  width: 58,
+                  height: 78,
+                  child: season.posterPath == null
+                      ? Icon(PhosphorIcons.television())
+                      : CachedNetworkImage(
+                          cacheManager: cacheProp(),
+                          imageUrl:
+                              'https://image.tmdb.org/t/p/w185${season.posterPath}',
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) =>
+                              const AppCachedImagePlaceholder(),
+                          errorWidget: (_, __, ___) =>
+                              Icon(PhosphorIcons.television()),
+                        ),
+                ),
+                trailing: Icon(
+                  selected
+                      ? PhosphorIcons.checkCircle(PhosphorIconsStyle.fill)
+                      : PhosphorIcons.caretRight(),
+                  color: selected ? colors.primary : colors.onSurfaceVariant,
+                ),
+                onTap: () => Navigator.pop(sheetContext, season.seasonNumber),
+              );
+            },
+          ),
+        );
+      },
+    );
+    if (!mounted || selectedSeason == null) return;
+
+    final currentBrowsedSeason = _portraitBrowsedSeasonNumber ??
+        metadata.seasonEpisodes?.firstOrNull?.seasonNumber ??
+        metadata.seasonNumber;
+    if (selectedSeason == currentBrowsedSeason) return;
+
+    setState(() => _portraitSeasonLoading = true);
+    var loaded = false;
+    try {
+      loaded = await _episodeSelection.fetchEpisodesForSeason(
+        context,
+        selectedSeason,
+        metadata,
+        widget.colors,
+      );
+    } catch (error) {
+      debugPrint('[PlayerContentMenu] portrait season switch failed: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _portraitSeasonLoading = false;
+          if (loaded) _portraitBrowsedSeasonNumber = selectedSeason;
+        });
+      }
+    }
+  }
+
+  String? _portraitEpisodeSubtitle(EpisodeMetadata episode) {
+    final details = <String>[];
+    if (episode.runtime != null) details.add('${episode.runtime}m');
+    if (episode.voteAverage != null && episode.voteAverage! > 0) {
+      details.add('★ ${episode.voteAverage!.toStringAsFixed(1)}');
+    }
+    return details.isEmpty ? null : details.join('  •  ');
+  }
+
+  String? _portraitMovieSubtitle(MovieRecommendation movie) {
+    final details = <String>[];
+    if (movie.releaseDate?.isNotEmpty == true) {
+      details.add(movie.releaseDate!.split('-').first);
+    }
+    if (movie.voteAverage != null && movie.voteAverage! > 0) {
+      details.add('★ ${movie.voteAverage!.toStringAsFixed(1)}');
+    }
+    return details.isEmpty ? null : details.join('  •  ');
   }
 
   void _exitPlayer() {
@@ -3699,9 +4051,8 @@ class _SubtitleSwitcherSheetState extends State<_SubtitleSwitcherSheet> {
                           ),
                         )
                       : null,
-              onTap: _loadingOption == null
-                  ? () => _selectSubtitle(option)
-                  : null,
+              onTap:
+                  _loadingOption == null ? () => _selectSubtitle(option) : null,
             );
           },
         ),
@@ -3949,4 +4300,35 @@ String _subtitleOffsetLabel(Duration offset) {
     offset.isNegative ? 'subtitle_offset_earlier' : 'subtitle_offset_later',
     namedArgs: {'offset': compactSeconds},
   );
+}
+
+class _PortraitMediaThumbnail extends StatelessWidget {
+  const _PortraitMediaThumbnail({
+    required this.path,
+    required this.width,
+    required this.height,
+    required this.fallbackIcon,
+  });
+
+  final String? path;
+  final double width;
+  final double height;
+  final IconData fallbackIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    return PlayerThumbnail(
+      width: width,
+      height: height,
+      child: path == null
+          ? Icon(fallbackIcon)
+          : CachedNetworkImage(
+              cacheManager: cacheProp(),
+              imageUrl: 'https://image.tmdb.org/t/p/w300$path',
+              fit: BoxFit.cover,
+              placeholder: (_, __) => const AppCachedImagePlaceholder(),
+              errorWidget: (_, __, ___) => Icon(fallbackIcon),
+            ),
+    );
+  }
 }

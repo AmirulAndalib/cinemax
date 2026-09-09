@@ -124,6 +124,8 @@ class _LivePlayerState extends State<LivePlayer> {
   late final AppDependencyProvider _appDependencies;
   late final SettingsProvider _settings;
   int? _occasionalEffectsSuppressionId;
+  Orientation? _lastScreenOrientation;
+  bool _landscapeFullscreenRequestPending = false;
 
   @override
   void initState() {
@@ -1052,6 +1054,20 @@ class _LivePlayerState extends State<LivePlayer> {
 
   @override
   Widget build(BuildContext context) {
+    _handleScreenOrientation(context);
+    if (_isPortraitInlineLayout(context)) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          _exitPlayer();
+        },
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          body: _buildPortraitInlineLayout(context),
+        ),
+      );
+    }
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -1146,6 +1162,224 @@ class _LivePlayerState extends State<LivePlayer> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _handleScreenOrientation(BuildContext context) {
+    final orientation = MediaQuery.of(context).orientation;
+    final changed = _lastScreenOrientation != orientation;
+    _lastScreenOrientation = orientation;
+
+    if (orientation == Orientation.portrait) {
+      _landscapeFullscreenRequestPending = false;
+      return;
+    }
+    if (!changed ||
+        widget.useTvControls ||
+        _betterPlayerController.isFullScreen ||
+        _landscapeFullscreenRequestPending) {
+      return;
+    }
+
+    _landscapeFullscreenRequestPending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _landscapeFullscreenRequestPending = false;
+      if (MediaQuery.of(context).orientation == Orientation.landscape &&
+          !_betterPlayerController.isFullScreen) {
+        _betterPlayerController.enterFullScreen();
+      }
+    });
+  }
+
+  bool _isPortraitInlineLayout(BuildContext context) {
+    return !widget.useTvControls &&
+        MediaQuery.of(context).orientation == Orientation.portrait &&
+        !_betterPlayerController.isFullScreen;
+  }
+
+  Widget _buildPortraitInlineLayout(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: BetterPlayer(
+                    key: _betterPlayerKey,
+                    controller: _betterPlayerController,
+                  ),
+                ),
+                Positioned(
+                  top: 12,
+                  left: 0,
+                  right: 0,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: AnimatedSlide(
+                        offset: _bannerText == null
+                            ? const Offset(0, -2)
+                            : Offset.zero,
+                        duration: const Duration(milliseconds: 240),
+                        curve: Curves.easeOutCubic,
+                        child: AnimatedOpacity(
+                          opacity: _bannerText == null ? 0 : 1,
+                          duration: const Duration(milliseconds: 240),
+                          child: Material(
+                            color: Colors.black.withValues(alpha: .78),
+                            borderRadius: BorderRadius.circular(24),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 9,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_isSwitching)
+                                    const SizedBox.square(
+                                      dimension: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  else
+                                    Icon(
+                                      PhosphorIcons.broadcast(
+                                        PhosphorIconsStyle.fill,
+                                      ),
+                                      size: 18,
+                                      color: widget.colors.first,
+                                    ),
+                                  const SizedBox(width: 9),
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth:
+                                          MediaQuery.of(context).size.width *
+                                              .62,
+                                    ),
+                                    child: Text(
+                                      _bannerText ?? '',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontFamily: 'FigtreeSB',
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+              children: [
+                Text(
+                  _currentChannelName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: colors.onSurface,
+                    fontFamily: 'FigtreeSB',
+                  ),
+                ),
+                if (widget.channels.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Icon(
+                        PhosphorIcons.televisionSimple(),
+                        size: 21,
+                        color: colors.primary,
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          'Channels',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontFamily: 'FigtreeSB',
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${widget.channels.length}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ...widget.channels.map((channel) {
+                    final current = channel.id == _currentChannelId;
+                    final secondary = channel.nowPlaying ??
+                        (channel.categories.isEmpty
+                            ? null
+                            : channel.categories.join(' • '));
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Material(
+                        color: current
+                            ? colors.primary.withValues(alpha: .12)
+                            : colors.surfaceContainerHighest
+                                .withValues(alpha: .45),
+                        borderRadius: BorderRadius.circular(12),
+                        clipBehavior: Clip.antiAlias,
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(
+                            current
+                                ? PhosphorIcons.playCircle(
+                                    PhosphorIconsStyle.fill,
+                                  )
+                                : PhosphorIcons.televisionSimple(),
+                            color: current
+                                ? colors.primary
+                                : colors.onSurfaceVariant,
+                          ),
+                          title: Text(
+                            channel.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: secondary == null
+                              ? null
+                              : Text(
+                                  secondary,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                          onTap: current || !canSwitchChannels
+                              ? null
+                              : () => unawaited(_switchChannel(channel)),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1393,85 +1627,110 @@ class _LivePlayerErrorOverlay extends StatelessWidget {
     return ColoredBox(
       color: Colors.black.withValues(alpha: .86),
       child: SafeArea(
-        minimum: const EdgeInsets.all(24),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 460),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 58,
-                  height: 58,
-                  decoration: BoxDecoration(
-                    color: colors.error.withValues(alpha: .16),
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: retrying
-                      ? SizedBox.square(
-                          dimension: 26,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            color: colors.primary,
-                          ),
-                        )
-                      : Icon(
-                          PhosphorIcons.warningCircle(),
-                          color: colors.error,
-                          size: 30,
-                        ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  retrying ? 'Reconnecting…' : 'Channel unavailable',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontFamily: 'FigtreeSB',
-                    fontSize: 22,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  retrying
-                      ? 'Resolving a fresh stream for this channel.'
-                      : message,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 22),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 10,
-                  runSpacing: 10,
+        minimum: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxHeight < 300;
+            final iconSize = compact ? 42.0 : 58.0;
+            final titleSize = compact ? 18.0 : 22.0;
+            final messageLines = compact ? 2 : 3;
+            final gapAfterIcon = compact ? 8.0 : 18.0;
+            final gapAfterTitle = compact ? 4.0 : 8.0;
+            final gapBeforeActions = compact ? 8.0 : 22.0;
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    FilledButton.icon(
-                      onPressed: retrying ? null : onRetry,
-                      icon: Icon(PhosphorIcons.arrowClockwise()),
-                      label: const Text('Retry'),
-                    ),
-                    if (onChannels != null)
-                      OutlinedButton.icon(
-                        onPressed: onChannels,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white38),
-                        ),
-                        icon: Icon(PhosphorIcons.televisionSimple()),
-                        label: const Text('Choose channel'),
+                    Container(
+                      width: iconSize,
+                      height: iconSize,
+                      decoration: BoxDecoration(
+                        color: colors.error.withValues(alpha: .16),
+                        shape: BoxShape.circle,
                       ),
+                      alignment: Alignment.center,
+                      child: retrying
+                          ? SizedBox.square(
+                              dimension: 26,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                color: colors.primary,
+                              ),
+                            )
+                          : Icon(
+                              PhosphorIcons.warningCircle(),
+                              color: colors.error,
+                              size: 30,
+                            ),
+                    ),
+                    SizedBox(height: gapAfterIcon),
+                    Text(
+                      retrying ? 'Reconnecting…' : 'Channel unavailable',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontFamily: 'FigtreeSB',
+                        fontSize: titleSize,
+                      ),
+                    ),
+                    SizedBox(height: gapAfterTitle),
+                    Text(
+                      retrying
+                          ? 'Resolving a fresh stream for this channel.'
+                          : message,
+                      maxLines: messageLines,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        height: 1.4,
+                      ),
+                    ),
+                    SizedBox(height: gapBeforeActions),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: retrying ? null : onRetry,
+                          style: compact
+                              ? FilledButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                )
+                              : null,
+                          icon: Icon(PhosphorIcons.arrowClockwise()),
+                          label: const Text('Retry'),
+                        ),
+                        if (onChannels != null)
+                          OutlinedButton.icon(
+                            onPressed: onChannels,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.white38),
+                              visualDensity: compact
+                                  ? VisualDensity.compact
+                                  : VisualDensity.standard,
+                              padding: compact
+                                  ? const EdgeInsets.symmetric(horizontal: 12)
+                                  : null,
+                            ),
+                            icon: Icon(PhosphorIcons.televisionSimple()),
+                            label: const Text('Choose channel'),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
