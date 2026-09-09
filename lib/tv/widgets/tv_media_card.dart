@@ -57,6 +57,11 @@ class TvMediaCard extends StatelessWidget {
                     CachedNetworkImage(
                       cacheManager: cacheProp(),
                       imageUrl: imageUrl,
+                      // Decode close to the rendered size to avoid retaining
+                      // multi-megapixel TMDB frames for small TV cards.
+                      memCacheWidth:
+                          (width * MediaQuery.devicePixelRatioOf(context))
+                              .round(),
                       fit: BoxFit.cover,
                       placeholder: (_, __) => ColoredBox(
                         color:

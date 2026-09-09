@@ -54,6 +54,11 @@ class TvHero extends StatelessWidget {
               CachedNetworkImage(
                 cacheManager: cacheProp(),
                 imageUrl: imageUrl,
+                // The hero is displayed at a bounded width; avoid decoding
+                // TMDB's original multi-megapixel image into TV RAM.
+                memCacheWidth: (MediaQuery.sizeOf(context).width *
+                        MediaQuery.devicePixelRatioOf(context))
+                    .round(),
                 fit: BoxFit.cover,
                 alignment: Alignment.topCenter,
                 placeholder: (_, __) => ColoredBox(
