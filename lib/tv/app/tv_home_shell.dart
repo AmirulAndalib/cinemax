@@ -414,17 +414,15 @@ class _TvHomeShellState extends State<TvHomeShell> with RestorationMixin {
                                   growable: false,
                                 );
                                 final selectedIndex = ids.indexOf(selectedId);
-                                return IndexedStack(
-                                  index: selectedIndex < 0 ? 0 : selectedIndex,
-                                  children: <Widget>[
-                                    for (var index = 0;
-                                        index < ids.length;
-                                        index++)
-                                      ExcludeFocus(
-                                        excluding: index != selectedIndex,
-                                        child: screens[ids[index]]!,
-                                      ),
-                                  ],
+                                // Keep only the active destination mounted.
+                                // IndexedStack retained every screen (and its
+                                // network images/controllers) in TV RAM.
+                                final activeId = selectedIndex < 0
+                                    ? ids.first
+                                    : ids[selectedIndex];
+                                return KeyedSubtree(
+                                  key: ValueKey<String>(activeId),
+                                  child: screens[activeId]!,
                                 );
                               },
                             ),

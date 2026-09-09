@@ -37,7 +37,9 @@ class _TvPlayerScreenState extends State<TvPlayerScreen> {
   Widget build(BuildContext context) {
     return ColoredBox(
       color: Colors.black,
-      child: widget.child,
+      // Keep video compositing isolated from route-level overlays and focus
+      // updates so TV controls do not trigger unnecessary repaints.
+      child: RepaintBoundary(child: widget.child),
     );
   }
 }

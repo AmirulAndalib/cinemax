@@ -77,10 +77,17 @@ final List<String> appNames = [
   'flixquest-v3.0.0.apk'
 ];
 
-CacheManager cacheProp() {
-  return CacheManager(
-      Config('cacheKey', stalePeriod: const Duration(days: 15)));
-}
+/// Shared, bounded image cache. Creating one manager per widget bypasses
+/// reuse and leaves multiple cache instances competing for TV memory/storage.
+final CacheManager _sharedImageCache = CacheManager(
+  Config(
+    'flixquest-images',
+    stalePeriod: const Duration(days: 15),
+    maxNrOfCacheObjects: 180,
+  ),
+);
+
+CacheManager cacheProp() => _sharedImageCache;
 
 enum MediaType { movie, tvShow }
 

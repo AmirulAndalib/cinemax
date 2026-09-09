@@ -239,6 +239,9 @@ class _DetailsBody extends StatelessWidget {
               child: CachedNetworkImage(
                 cacheManager: cacheProp(),
                 imageUrl: imageUrl,
+                memCacheWidth: (MediaQuery.sizeOf(context).width *
+                        MediaQuery.devicePixelRatioOf(context))
+                    .round(),
                 fit: BoxFit.cover,
                 alignment: Alignment.topCenter,
                 placeholder: (_, __) => const AppCachedImagePlaceholder(),

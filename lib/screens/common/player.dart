@@ -472,7 +472,9 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
                 widget.useTvControls ? false : widget.settings.defaultViewMode,
             autoPlay: true,
             fit: BoxFit.contain,
-            enableAmbientGlow: true,
+            // Ambient glow continuously samples the video frame and is costly
+            // on TV GPUs. Keep the existing effect for mobile playback.
+            enableAmbientGlow: !widget.useTvControls,
             autoDispose: true,
             controlsConfiguration: betterPlayerControlsConfiguration,
             showPlaceholderUntilPlay: true,
@@ -2792,7 +2794,12 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
           debugPrint('Unable to restore provider after switch: $restoreError');
         }
       } else if (wasPlaying) {
-        await _betterPlayerController.play();
+        try {
+          await _betterPlayerController.play();
+        } catch (playError) {
+          debugPrint(
+              'Unable to resume playback after provider failure: $playError');
+        }
       }
       // Provider errors are intentionally kept in debug logs only. Scraper and
       // platform exceptions can contain URLs, native class names, and complete
@@ -2810,6 +2817,11 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
           closeMenu();
           unawaited(_startActiveProviderEnrichment());
         } else {
+          if (widget.useTvControls) {
+            // A failed switch must return focus to the TV controls; otherwise
+            // the remote appears frozen after the error sheet closes.
+            _tvControlsController.show(restorePreviousFocus: true);
+          }
           refreshMenu();
         }
       }
