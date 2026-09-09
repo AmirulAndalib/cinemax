@@ -184,7 +184,9 @@ class _RemoteHostedAdsBannerState extends State<RemoteHostedAdsBanner> {
 
   @override
   Widget build(BuildContext context) {
-    final dependencies = context.watch<AppDependencyProvider>();
+    // Ads are optional on standalone screens and in lightweight test trees.
+    final dependencies = context.watch<AppDependencyProvider?>();
+    if (dependencies == null) return const SizedBox.shrink();
 
     if (dependencies.isUnityBannerActive) {
       return UnityBannerWidget(
