@@ -16,6 +16,7 @@ import '../../video_providers/common.dart';
 import '../../functions/video_utils.dart';
 import '../../functions/network.dart';
 import '../../functions/player_subtitle_configuration.dart';
+import '../../functions/player_buffering_configuration.dart';
 import '../../functions/subtitle_options.dart';
 import '/constants/app_constants.dart';
 import '/widgets/common_widgets.dart';
@@ -99,14 +100,6 @@ class PlayerOne extends StatefulWidget {
 }
 
 class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
-  // Halved from the mobile cap: TVs are RAM-constrained and buffered HLS
-  // segments at high bitrate were a low-memory-kill risk during movies.
-  static const int _tvMaxBufferDurationMs = 60000;
-  static const int _mobileBackBufferDurationMs = 120000;
-  static const int _tvBackBufferDurationMs = 30000;
-  static const int _bufferForPlaybackMs = 6000;
-  static const int _bufferForPlaybackAfterRebufferMs = 12000;
-
   late BetterPlayerController _betterPlayerController;
   bool _betterPlayerControllerInitialized = false;
   final StreamIntroService _introService = StreamIntroService();
@@ -265,20 +258,9 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     // Player only holds a wakelock inside its own fullscreen route, which TV
     // playback never enters.
     unawaited(WakelockPlus.enable());
-    final configuredMaxBufferMs = widget.settings.defaultMaxBufferDuration;
-    final maxBufferMs =
-        widget.useTvControls && configuredMaxBufferMs > _tvMaxBufferDurationMs
-            ? _tvMaxBufferDurationMs
-            : configuredMaxBufferMs;
-    betterPlayerBufferingConfiguration = BetterPlayerBufferingConfiguration(
-      maxBufferMs: maxBufferMs,
-      minBufferMs: 15000,
-      bufferForPlaybackMs: _bufferForPlaybackMs,
-      bufferForPlaybackAfterRebufferMs: _bufferForPlaybackAfterRebufferMs,
-      backBufferDurationMs: widget.useTvControls
-          ? _tvBackBufferDurationMs
-          : _mobileBackBufferDurationMs,
-      retainBackBufferFromKeyframe: !widget.useTvControls,
+    betterPlayerBufferingConfiguration = buildPlayerBufferingConfiguration(
+      maximumDurationMs: widget.settings.defaultMaxBufferDuration,
+      television: widget.useTvControls,
     );
     final hasEpisodeSelection =
         widget.mediaType == MediaType.tvShow && _contentMenuEpisodes.isNotEmpty;

@@ -8,6 +8,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../functions/function.dart';
+import '../../functions/live_playback_policy.dart';
 import '../../models/live_tv.dart';
 import '../../models/wellness.dart';
 import '../../provider/app_dependency_provider.dart';
@@ -69,10 +70,11 @@ class LivePlayer extends StatefulWidget {
 class _LivePlayerState extends State<LivePlayer> {
   static const Duration _recoveryWindow = Duration(minutes: 5);
   static const Duration _sourceSetupTimeout = Duration(seconds: 15);
+  static const Duration _sourceResolveTimeout = Duration(seconds: 30);
   static const List<Duration> _automaticRecoveryDelays = <Duration>[
+    Duration(seconds: 2),
     Duration(seconds: 5),
-    Duration(seconds: 8),
-    Duration(seconds: 12),
+    Duration(seconds: 10),
     Duration(seconds: 20),
     Duration(seconds: 30),
   ];
@@ -93,6 +95,9 @@ class _LivePlayerState extends State<LivePlayer> {
   Timer? _bannerTimer;
   Timer? _recoveryDeadlineTimer;
   Timer? _recoveryAttemptTimer;
+  Timer? _watchdogTimer;
+  final _watchdogClock = Stopwatch()..start();
+  final _watchdog = LivePlaybackWatchdog();
   late final DateTime _sessionStartedAt;
   late final String _sessionId;
   late final WellnessPlaybackTracker _wellnessTracker;
@@ -154,18 +159,7 @@ class _LivePlayerState extends State<LivePlayer> {
     _currentClearKey = widget.clearKey;
     _streamVariants = List<LiveStreamVariant>.of(widget.variants);
 
-    betterPlayerBufferingConfiguration =
-        const BetterPlayerBufferingConfiguration(
-      // Live HLS exposes a short, moving playlist window. Keep enough media
-      // for ordinary network jitter without waiting for a VOD-sized buffer.
-      maxBufferMs: 120000,
-      minBufferMs: 15000,
-      bufferForPlaybackMs: 2500,
-      bufferForPlaybackAfterRebufferMs: 5000,
-      backBufferDurationMs: 30000,
-      retainBackBufferFromKeyframe: false,
-      prioritizeTimeOverSizeThresholds: true,
-    );
+    betterPlayerBufferingConfiguration = liveBufferingConfiguration;
 
     betterPlayerControlsConfiguration =
         _buildControlsConfiguration(_currentChannelName);
@@ -213,6 +207,37 @@ class _LivePlayerState extends State<LivePlayer> {
     _betterPlayerController.addEventsListener(_onPlayerEvent);
     unawaited(_setupInitialStream());
     _betterPlayerController.setBetterPlayerGlobalKey(_betterPlayerKey);
+    _watchdogTimer = Timer.periodic(
+        const Duration(seconds: 2), (_) => _checkPlaybackProgress());
+  }
+
+  void _checkPlaybackProgress() {
+    if (!mounted) return;
+    final value = _betterPlayerController.videoPlayerController?.value;
+    if (_isSwitching ||
+        _recoveryStartedAt != null ||
+        _playbackFailure.value != null ||
+        value == null ||
+        !value.initialized ||
+        value.hasError) {
+      _watchdog.reset();
+      return;
+    }
+    var bufferedAhead = Duration.zero;
+    for (final range in value.buffered) {
+      if (range.start <= value.position && range.end > value.position) {
+        bufferedAhead = range.end - value.position;
+        break;
+      }
+    }
+    if (_watchdog.observe(
+      elapsed: _watchdogClock.elapsed,
+      position: value.position,
+      bufferedAhead: bufferedAhead,
+      shouldPlay: value.isPlaying,
+    )) {
+      _beginPlaybackRecovery('The live stream stopped making progress.');
+    }
   }
 
   Future<void> _setupInitialStream() async {
@@ -416,13 +441,13 @@ class _LivePlayerState extends State<LivePlayer> {
       message: failure?.message ?? 'This channel is temporarily unavailable.',
       retrying: true,
     );
-    _betterPlayerController.setControlsEnabled(false);
+    _betterPlayerController.setControlsEnabled(true);
     _trackPlayerEvent('retry');
     try {
       final service = widget.service;
       final channelId = _currentChannelId;
       final stream = service != null && channelId != null
-          ? await service.getStream(channelId)
+          ? await service.getStream(channelId).timeout(_sourceResolveTimeout)
           : null;
       if (!_isActiveSourceOperation(operation)) return;
       final url = stream?.url ?? _currentVideoUrl;
@@ -483,9 +508,8 @@ class _LivePlayerState extends State<LivePlayer> {
       );
       _trackPlayerEvent('reconnecting', error: error.toString());
     }
-    // Native errors are transient for live streams until the recovery window
-    // expires. Cover the player's error surface with a loading state while
-    // native segment retries and slower source refreshes continue.
+    // Recover transient failures with an unobtrusive loading indicator. Reserve
+    // the error prompt for when the automatic recovery window is exhausted.
     _playbackFailure.value = const _LivePlaybackFailure(
       message: 'Waiting for enough live video to continue.',
       retrying: true,
@@ -493,7 +517,7 @@ class _LivePlayerState extends State<LivePlayer> {
     // Native HLS loading still retries individual requests. This app-level
     // loop is the only component allowed to replace the live source, so fresh
     // tokens cannot race a second Better Player source-retry loop.
-    _betterPlayerController.setControlsEnabled(false);
+    _betterPlayerController.setControlsEnabled(true);
     _scheduleAutomaticRecovery();
   }
 
@@ -519,6 +543,16 @@ class _LivePlayerState extends State<LivePlayer> {
     if (!mounted || _recoveryStartedAt == null || _automaticRecoveryRunning) {
       return;
     }
+    final value = _betterPlayerController.videoPlayerController?.value;
+    if (_recoveryProgressSamples > 0 &&
+        value?.isPlaying == true &&
+        value?.isBuffering == false &&
+        value?.hasError == false) {
+      // Let native recovery prove sustained playback before replacing a source
+      // that is already producing frames again.
+      _scheduleAutomaticRecovery();
+      return;
+    }
     _automaticRecoveryRunning = true;
     final generation = _recoveryGeneration;
     final operation = _beginSourceOperation();
@@ -528,7 +562,8 @@ class _LivePlayerState extends State<LivePlayer> {
       final service = widget.service;
       final channelId = _currentChannelId;
       if (service != null && channelId != null) {
-        final stream = await service.getStream(channelId);
+        final stream =
+            await service.getStream(channelId).timeout(_sourceResolveTimeout);
         if (!_isActiveRecovery(generation) ||
             !_isActiveSourceOperation(operation)) {
           return;
@@ -595,7 +630,10 @@ class _LivePlayerState extends State<LivePlayer> {
       _recoveryStartedAt != null &&
       generation == _recoveryGeneration;
 
-  int _beginSourceOperation() => ++_sourceOperationGeneration;
+  int _beginSourceOperation() {
+    _watchdog.reset();
+    return ++_sourceOperationGeneration;
+  }
 
   bool _isActiveSourceOperation(int generation) =>
       mounted && generation == _sourceOperationGeneration;
@@ -665,6 +703,7 @@ class _LivePlayerState extends State<LivePlayer> {
     _playbackFailure.value = _LivePlaybackFailure(
       message: friendlyLiveTvError(error),
     );
+    _betterPlayerController.setControlsEnabled(false);
     _trackPlayerEvent('reconnect_exhausted', error: error.toString());
   }
 
@@ -729,15 +768,20 @@ class _LivePlayerState extends State<LivePlayer> {
       case BetterPlayerEventType.progress:
         final operation = _pendingRecoveryOperation;
         final position = event.parameters?['progress'];
+        final value = _betterPlayerController.videoPlayerController?.value;
         if (_recoveryStartedAt != null &&
-            operation != null &&
-            _isActiveSourceOperation(operation) &&
+            (operation == null || _isActiveSourceOperation(operation)) &&
+            value?.isPlaying == true &&
+            value?.isBuffering == false &&
+            value?.hasError == false &&
             position is Duration &&
             (_lastRecoveryProgress == null ||
-                position > _lastRecoveryProgress!)) {
+                position != _lastRecoveryProgress!)) {
           _lastRecoveryProgress = position;
           _recoveryProgressSamples++;
-          if (_recoveryProgressSamples >= 2) _finishPlaybackRecovery();
+          if (_recoveryProgressSamples >= 3) _finishPlaybackRecovery();
+        } else if (_recoveryStartedAt != null) {
+          _recoveryProgressSamples = 0;
         }
         break;
       case BetterPlayerEventType.exception:
@@ -746,6 +790,9 @@ class _LivePlayerState extends State<LivePlayer> {
             'Unknown player error';
         _trackPlayerEvent('error', error: error);
         _beginPlaybackRecovery(error);
+        break;
+      case BetterPlayerEventType.finished:
+        _beginPlaybackRecovery('The live broadcast stopped.');
         break;
       case BetterPlayerEventType.openFullscreen:
         _trackPlayerEvent('fullscreen_opened');
@@ -931,7 +978,8 @@ class _LivePlayerState extends State<LivePlayer> {
       value: 'player',
     );
     try {
-      final stream = await service.getStream(channel.id);
+      final stream =
+          await service.getStream(channel.id).timeout(_sourceResolveTimeout);
       if (!_isActiveSourceOperation(operation)) return;
       if (hadPlaybackFailure) {
         _beginPlaybackRecovery('Waiting for live video to start.');
@@ -1019,6 +1067,8 @@ class _LivePlayerState extends State<LivePlayer> {
       });
     }
     _bannerTimer?.cancel();
+    _watchdogTimer?.cancel();
+    _watchdogClock.stop();
     _cancelPlaybackRecovery();
     _betterPlayerController.removeEventsListener(_onPlayerEvent);
     _playbackFailure.dispose();
@@ -1624,6 +1674,21 @@ class _LivePlayerErrorOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    if (retrying) {
+      // Keep the last frame and let viewers use playback/channel controls while
+      // recovery runs. A transient network failure is not an actionable error.
+      return IgnorePointer(
+        child: Center(
+          child: SizedBox.square(
+            dimension: 32,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: colors.primary,
+            ),
+          ),
+        ),
+      );
+    }
     return ColoredBox(
       color: Colors.black.withValues(alpha: .86),
       child: SafeArea(
