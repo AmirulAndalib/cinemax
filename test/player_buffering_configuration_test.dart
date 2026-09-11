@@ -13,16 +13,19 @@ void main() {
     expect(configuration.minBufferMs, 60000);
     expect(configuration.bufferForPlaybackMs, 1500);
     expect(configuration.bufferForPlaybackAfterRebufferMs, 5000);
+    expect(configuration.backBufferDurationMs, 60000);
+    expect(configuration.retainBackBufferFromKeyframe, isTrue);
   });
 
-  test('TV gives its sample budget to upcoming media', () {
+  test('TV keeps a smaller rewind window with a decoding keyframe', () {
     final configuration = buildPlayerBufferingConfiguration(
       maximumDurationMs: 360000,
       television: true,
     );
     expect(configuration.maxBufferMs, 60000);
     expect(configuration.minBufferMs, 30000);
-    expect(configuration.backBufferDurationMs, 0);
+    expect(configuration.backBufferDurationMs, 15000);
+    expect(configuration.retainBackBufferFromKeyframe, isTrue);
   });
 
   test(

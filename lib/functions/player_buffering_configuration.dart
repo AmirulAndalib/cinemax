@@ -12,7 +12,10 @@ BetterPlayerBufferingConfiguration buildPlayerBufferingConfiguration({
     maxBufferMs: maximum,
     bufferForPlaybackMs: 1500,
     bufferForPlaybackAfterRebufferMs: 5000,
-    backBufferDurationMs: television ? 0 : 15000,
-    retainBackBufferFromKeyframe: false,
+    // A backward seek outside the retained samples resets Media3's entire
+    // queue, including downloaded forward media. Keep the preceding keyframe
+    // so seeks near the start of this window can still decode in memory.
+    backBufferDurationMs: television ? 15000 : 60000,
+    retainBackBufferFromKeyframe: true,
   );
 }
