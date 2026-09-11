@@ -520,7 +520,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
 
   void _syncAmbientGlowSetting() {
     _betterPlayerController.setAmbientGlowEnabled(
-      settings.playerAmbientGlowEnabled,
+      !widget.useTvControls && settings.playerAmbientGlowEnabled,
     );
   }
 

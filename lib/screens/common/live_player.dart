@@ -172,7 +172,8 @@ class _LivePlayerState extends State<LivePlayer> {
       autoPlay: true,
       allowedScreenSleep: false,
       fit: BoxFit.contain,
-      enableAmbientGlow: true,
+      // Sampling video frames for glow is costly on TV GPUs.
+      enableAmbientGlow: !widget.useTvControls,
       autoDispose: true,
       controlsConfiguration: betterPlayerControlsConfiguration,
       errorBuilder: (_, __) => const SizedBox.expand(),
@@ -265,7 +266,7 @@ class _LivePlayerState extends State<LivePlayer> {
 
   void _syncAmbientGlowSetting() {
     _betterPlayerController.setAmbientGlowEnabled(
-      _settings.playerAmbientGlowEnabled,
+      !widget.useTvControls && _settings.playerAmbientGlowEnabled,
     );
   }
 
