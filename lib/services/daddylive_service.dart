@@ -185,8 +185,8 @@ class DaddyLiveService implements LiveTvService {
   /// playable from the IP that fetched the channel's embed page. Because the
   /// scraper fetches embeds server-side, its resolved URL cannot be played
   /// directly on the device. The device therefore re-fetches the embed page
-  /// itself and extracts the m3u8 URL from it, falling back to the
-  /// server-resolved URL when that is unavailable.
+  /// itself and decodes its stream configuration. A server-resolved URL is
+  /// used only if the device can actually fetch its playlist.
   @override
   Future<DaddyLiveStream> getStream(String channelId) async {
     final json = await _getJson(
@@ -203,11 +203,11 @@ class DaddyLiveService implements LiveTvService {
       final deviceStream = await _resolveFromEmbed(apiStream);
       if (deviceStream != null) return deviceStream;
     }
-    if (apiStream.url.isEmpty) {
-      throw const DaddyLiveException(
-          'The channel returned no playable stream.');
+    if (apiStream.url.isNotEmpty &&
+        await _isPlayable(apiStream.url, apiStream.headers)) {
+      return apiStream;
     }
-    return apiStream;
+    throw const DaddyLiveException('The channel returned no playable stream.');
   }
 
   Map<String, String> _playbackHeaders(Map<String, String> headers) {
@@ -251,7 +251,7 @@ class DaddyLiveService implements LiveTvService {
             url: url,
             headers: apiStream.headers,
             embedUrl: apiStream.embedUrl,
-            expiresAt: apiStream.expiresAt,
+            expiresAt: _streamExpiry(url),
           );
         }
       }
@@ -279,8 +279,52 @@ class DaddyLiveService implements LiveTvService {
     }
   }
 
+  DateTime? _streamExpiry(String url) {
+    final uri = Uri.parse(url);
+    final timestamps = <String?>[
+      uri.queryParameters['e'],
+      ...RegExp(r'(?:^|/)(\d{10})(?:/|$)')
+          .allMatches(uri.path)
+          .map((match) => match.group(1)),
+    ];
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    for (final value in timestamps) {
+      final seconds = int.tryParse(value ?? '');
+      if (seconds != null && seconds > now - 86400 && seconds < now + 2592000) {
+        return DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: true);
+      }
+    }
+    return null;
+  }
+
+  /// The embed stores four shuffled base64 chunks, each with an inserted
+  /// character at offset 3. Decode data only; the config can also contain ads.
+  List<String> _decodeConfigSources(String encoded) {
+    try {
+      final raw = latin1.decode(base64Decode(encoded));
+      final partLength = raw.length ~/ 4;
+      if (partLength < 4 || raw.length % 4 != 0) return const <String>[];
+      const order = <int>[2, 0, 3, 1];
+      final parts = List<String>.filled(4, '');
+      for (var index = 0; index < 4; index++) {
+        final part =
+            raw.substring(index * partLength, (index + 1) * partLength);
+        parts[order[index]] = latin1.decode(
+          base64Decode(part.substring(0, 3) + part.substring(4)),
+        );
+      }
+      final config = jsonDecode(utf8.decode(base64Decode(parts.join())));
+      if (config is! Map<String, dynamic>) return const <String>[];
+      return <dynamic>[config['stream_url'], config['stream_url_nop2p']]
+          .whereType<String>()
+          .toList(growable: false);
+    } on FormatException {
+      return const <String>[];
+    }
+  }
+
   /// Extracts candidate m3u8 URLs from an embed page, mirroring the scraper's
-  /// parsing: base64 literals inside `atob(...)` plus raw URLs in the markup.
+  /// parsing: `_econfig`, base64 literals in `atob(...)`, and raw URLs.
   List<String> _extractM3u8Urls(String html, String pageUrl) {
     final candidates = <String>[];
     final atobPattern = RegExp(
@@ -294,6 +338,13 @@ class DaddyLiveService implements LiveTvService {
       } on FormatException {
         // Ignore unrelated base64 payloads.
       }
+    }
+    final configPattern = RegExp(
+      r'''window(?:\._econfig|\[['"]_econfig['"]\])\s*=\s*['"]([^'"]+)['"]''',
+      caseSensitive: false,
+    );
+    for (final match in configPattern.allMatches(html)) {
+      candidates.addAll(_decodeConfigSources(match.group(1)!));
     }
     final unescaped = html
         .replaceAll(r'\/', '/')
@@ -312,7 +363,8 @@ class DaddyLiveService implements LiveTvService {
         final uri = Uri.parse(candidate);
         final absolute =
             uri.hasScheme ? uri : Uri.parse(pageUrl).resolveUri(uri);
-        if (absolute.hasScheme && absolute.scheme.startsWith('http')) {
+        if ((absolute.scheme == 'http' || absolute.scheme == 'https') &&
+            absolute.host.isNotEmpty) {
           resolved.add(absolute.toString());
         }
       } on FormatException {
@@ -320,7 +372,8 @@ class DaddyLiveService implements LiveTvService {
       }
     }
     return resolved
-        .where((url) => url.contains('.m3u8'))
+        .where((url) =>
+            RegExp(r'\.m3u8(?:$|[?#])', caseSensitive: false).hasMatch(url))
         .toSet()
         .toList(growable: false);
   }

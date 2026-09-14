@@ -79,17 +79,25 @@ class _TvDialogState extends State<TvDialog> {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
-    final delta = switch (event.logicalKey) {
-      LogicalKeyboardKey.arrowUp || LogicalKeyboardKey.arrowLeft => -1,
-      LogicalKeyboardKey.arrowDown || LogicalKeyboardKey.arrowRight => 1,
-      _ => 0,
-    };
-    if (delta == 0) return KeyEventResult.ignored;
-    final target = index + delta;
-    if (target < 0 || target >= _actionFocusNodes.length) {
+    // Horizontal arrows step through choices, including a wrapped line.
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+        event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      final target =
+          index + (event.logicalKey == LogicalKeyboardKey.arrowLeft ? -1 : 1);
+      if (target >= 0 && target < _actionFocusNodes.length) {
+        _actionFocusNodes[target].requestFocus();
+      }
       return KeyEventResult.handled;
     }
-    _actionFocusNodes[target].requestFocus();
+    final direction = switch (event.logicalKey) {
+      LogicalKeyboardKey.arrowUp => TraversalDirection.up,
+      LogicalKeyboardKey.arrowDown => TraversalDirection.down,
+      LogicalKeyboardKey.arrowLeft => TraversalDirection.left,
+      LogicalKeyboardKey.arrowRight => TraversalDirection.right,
+      _ => null,
+    };
+    if (direction == null) return KeyEventResult.ignored;
+    _actionFocusNodes[index].focusInDirection(direction);
     return KeyEventResult.handled;
   }
 
@@ -124,7 +132,7 @@ class _TvDialogState extends State<TvDialog> {
 
     return Dialog(
       backgroundColor: colorScheme.surface,
-      insetPadding: const EdgeInsets.all(72),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 48, vertical: 28),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 720),
@@ -133,9 +141,10 @@ class _TvDialogState extends State<TvDialog> {
           child: TvKeymap(
             onBack: () => Navigator.of(context).pop(),
             child: Padding(
-              padding: const EdgeInsets.all(36),
+              padding: const EdgeInsets.all(20),
               child: SingleChildScrollView(
                 clipBehavior: Clip.hardEdge,
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,

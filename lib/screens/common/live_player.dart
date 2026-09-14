@@ -70,7 +70,9 @@ class LivePlayer extends StatefulWidget {
 class _LivePlayerState extends State<LivePlayer> {
   static const Duration _recoveryWindow = Duration(minutes: 5);
   static const Duration _sourceSetupTimeout = Duration(seconds: 15);
-  static const Duration _sourceResolveTimeout = Duration(seconds: 30);
+  // Resolution includes the scraper request, device embed fetch, and playlist
+  // validation. Live DLHD requests can take longer than 30 seconds.
+  static const Duration _sourceResolveTimeout = Duration(minutes: 2);
   static const List<Duration> _automaticRecoveryDelays = <Duration>[
     Duration(seconds: 2),
     Duration(seconds: 5),

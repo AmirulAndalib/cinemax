@@ -7,6 +7,7 @@ import 'package:flixquest/tv/focus/tv_screen_focus_controller.dart';
 import 'package:flixquest/tv/screens/tv_search_screen.dart';
 import 'package:flixquest/tv/screens/tv_settings_screen.dart';
 import 'package:flixquest/tv/widgets/tv_content_grid.dart';
+import 'package:flixquest/tv/widgets/tv_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -104,7 +105,7 @@ void main() {
 
   testWidgets('search remote arrows and back leave text entry with focus',
       (tester) async {
-    tester.view.physicalSize = const Size(1280, 720);
+    tester.view.physicalSize = const Size(960, 540);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -144,9 +145,60 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+      'channel grid keeps a complete card visible and distinguishes held OK',
+      (tester) async {
+    tester.view.physicalSize = const Size(960, 540);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var plays = 0;
+    var menus = 0;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: Center(
+      child: SizedBox(
+          width: 700,
+          height: 300,
+          child: TvContentGrid<int>(
+            scopeId: 'channels',
+            items: List.generate(30, (i) => i),
+            itemId: (i) => '$i',
+            semanticLabel: (i) => 'Channel $i',
+            targetItemWidth: 210,
+            horizontalSpacing: 12,
+            itemExtent: 126,
+            autofocus: true,
+            itemBuilder: (_, i, width) =>
+                SizedBox(width: width, child: Text('Channel $i')),
+            onItemActivated: (_) => plays++,
+            onItemMenu: (_) => menus++,
+          )),
+    ))));
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    expect(plays, 1);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.select);
+    expect(menus, 1);
+    expect(plays, 1);
+    for (var i = 0; i < 6; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+    }
+    final focused = FocusManager.instance.primaryFocus!;
+    expect(focused.debugLabel, 'channels:18');
+    final bounds = (focused.context!.findRenderObject() as RenderBox);
+    final top = bounds.localToGlobal(Offset.zero).dy;
+    expect(top, greaterThanOrEqualTo(120));
+    expect(top + bounds.size.height, lessThanOrEqualTo(420));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('settings entry and dialog back restore the originating tile',
       (tester) async {
-    tester.view.physicalSize = const Size(1280, 720);
+    tester.view.physicalSize = const Size(960, 540);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -192,7 +244,7 @@ void main() {
 
   testWidgets('subtitle settings are D-pad navigable and persist choices',
       (tester) async {
-    tester.view.physicalSize = const Size(1280, 720);
+    tester.view.physicalSize = const Size(960, 540);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -231,6 +283,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Subtitle settings'), findsNWidgets(2));
     expect(find.text('Font size'), findsOneWidget);
+    final dialogBounds = tester.getRect(find.byType(TvDialog));
+    for (final label in [
+      'Font size',
+      '17px',
+      'Background color',
+      'Black 45%'
+    ]) {
+      final bounds = tester.getRect(find.text(label));
+      expect(bounds.left, greaterThan(dialogBounds.left));
+      expect(bounds.right, lessThan(dialogBounds.right));
+    }
+
     expect(find.text('Text color'), findsOneWidget);
     expect(find.text('Background color'), findsOneWidget);
     expect(find.text('Text weight'), findsOneWidget);

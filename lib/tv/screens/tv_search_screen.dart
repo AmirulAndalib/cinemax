@@ -244,48 +244,12 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: <Widget>[
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  PhosphorIcons.magnifyingGlass(),
-                  color: colors.primary,
-                  size: 27,
-                ),
-              ),
-              const SizedBox(width: 15),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    'Search',
-                    style: TextStyle(
-                      color: colors.onSurface,
-                      fontFamily: 'FigtreeSB',
-                      fontSize: 34,
-                      height: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    'Movies, series, and your recent searches',
-                    style: TextStyle(
-                      color: colors.onSurfaceVariant,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          SizedBox(height: widget.metrics.compact ? 16 : 24),
+          Text('Search',
+              style: TextStyle(
+                  color: colors.onSurface,
+                  fontFamily: 'FigtreeSB',
+                  fontSize: 28)),
+          const SizedBox(height: 10),
           FocusTraversalGroup(
             policy: ReadingOrderTraversalPolicy(),
             child: Row(

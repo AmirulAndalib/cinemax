@@ -32,7 +32,9 @@ class _UserStateState extends State<UserState> {
   @override
   void initState() {
     super.initState();
-    _loadPackageInfo();
+    if (widget.devicePresentation == DevicePresentation.handheld) {
+      _loadPackageInfo();
+    }
   }
 
   Future<void> _loadPackageInfo() async {
@@ -46,7 +48,9 @@ class _UserStateState extends State<UserState> {
   Widget build(BuildContext context) {
     final appDependency = context.watch<AppDependencyProvider>();
 
-    if (appDependency.isForcedUpdate && _packageInfo != null) {
+    if (widget.devicePresentation == DevicePresentation.handheld &&
+        appDependency.isForcedUpdate &&
+        _packageInfo != null) {
       final isUpdateAvailable = AppUpdateService.isAvailable(
         packageInfo: _packageInfo!,
         remoteVersion: appDependency.latestAppVersion,

@@ -131,20 +131,20 @@ class TvNavigationRailState extends State<TvNavigationRail> {
           ],
         ),
         padding: EdgeInsets.symmetric(
-          horizontal: widget.metrics.compact ? 9 : 13,
-          vertical: widget.metrics.compact ? 12 : 18,
+          horizontal: (widget.metrics.railWidth < 140) ? 9 : 13,
+          vertical: (widget.metrics.railWidth < 140) ? 12 : 18,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Padding(
               padding: EdgeInsets.fromLTRB(
-                widget.metrics.compact ? 13 : 10,
+                (widget.metrics.railWidth < 140) ? 13 : 10,
                 0,
-                widget.metrics.compact ? 13 : 10,
-                widget.metrics.compact ? 10 : 18,
+                (widget.metrics.railWidth < 140) ? 13 : 10,
+                (widget.metrics.railWidth < 140) ? 10 : 18,
               ),
-              child: widget.metrics.compact
+              child: (widget.metrics.railWidth < 140)
                   ? AppLogo(
                       fallbackAsset: 'assets/images/fq_svg.svg',
                       height: 28,
@@ -203,7 +203,8 @@ class TvNavigationRailState extends State<TvNavigationRail> {
                         child: Container(
                           height: widget.metrics.navItemHeight,
                           padding: EdgeInsets.symmetric(
-                            horizontal: widget.metrics.compact ? 0 : 12,
+                            horizontal:
+                                (widget.metrics.railWidth < 140) ? 0 : 12,
                           ),
                           decoration: BoxDecoration(
                             gradient: destination.id == widget.selectedId
@@ -232,9 +233,10 @@ class TvNavigationRailState extends State<TvNavigationRail> {
                                   ),
                                 ),
                               Row(
-                                mainAxisAlignment: widget.metrics.compact
-                                    ? MainAxisAlignment.center
-                                    : MainAxisAlignment.start,
+                                mainAxisAlignment:
+                                    (widget.metrics.railWidth < 140)
+                                        ? MainAxisAlignment.center
+                                        : MainAxisAlignment.start,
                                 children: <Widget>[
                                   Icon(
                                     destination.id == widget.selectedId
@@ -244,9 +246,12 @@ class TvNavigationRailState extends State<TvNavigationRail> {
                                     color: destination.id == widget.selectedId
                                         ? colors.primary
                                         : colors.onSurfaceVariant,
-                                    size: widget.metrics.compact ? 25 : 26,
+                                    size: (widget.metrics.railWidth < 140)
+                                        ? 25
+                                        : 26,
                                   ),
-                                  if (!widget.metrics.compact) ...<Widget>[
+                                  if (!(widget.metrics.railWidth <
+                                      140)) ...<Widget>[
                                     const SizedBox(width: 14),
                                     Expanded(
                                       child: Text(

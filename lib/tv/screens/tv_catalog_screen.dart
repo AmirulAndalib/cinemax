@@ -7,6 +7,7 @@ import '../../provider/settings_provider.dart';
 import '../app/tv_design.dart';
 import '../controllers/tv_catalog_controller.dart';
 import '../focus/tv_screen_focus_controller.dart';
+import '../focus/tv_focusable.dart';
 import '../models/tv_media_item.dart';
 import '../widgets/tv_content_grid.dart';
 import '../widgets/tv_media_card.dart';
@@ -36,6 +37,7 @@ class _TvCatalogScreenState extends State<TvCatalogScreen> {
       TvContentGridController();
   Future<List<TvMediaItem>>? _items;
   String? _configurationKey;
+  String _sort = 'Discover';
 
   @override
   void initState() {
@@ -107,6 +109,34 @@ class _TvCatalogScreenState extends State<TvCatalogScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           _CatalogHeader(title: title, icon: icon),
+          const SizedBox(height: 8),
+          Row(children: [
+            for (final sort in ['Discover', 'Top rated', 'Newest'])
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: TvFocusable(
+                  semanticLabel: '$sort $title',
+                  selected: _sort == sort,
+                  focusScale: 1,
+                  onActivate: () => setState(() => _sort = sort),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                    decoration: BoxDecoration(
+                        color: _sort == sort
+                            ? Theme.of(context).colorScheme.primary
+                            : TvDesign.raisedSurface,
+                        borderRadius: BorderRadius.circular(8)),
+                    child: Text(sort,
+                        style: TextStyle(
+                            fontSize: 17,
+                            color: _sort == sort
+                                ? Theme.of(context).colorScheme.onPrimary
+                                : Colors.white)),
+                  ),
+                ),
+              ),
+          ]),
           SizedBox(height: widget.metrics.compact ? 10 : 18),
           Expanded(
             child: FutureBuilder<List<TvMediaItem>>(
@@ -118,7 +148,15 @@ class _TvCatalogScreenState extends State<TvCatalogScreen> {
                 if (snapshot.hasError) {
                   return TvStatePanel.error(onRetry: _retry);
                 }
-                final items = snapshot.data ?? const <TvMediaItem>[];
+                final items = List<TvMediaItem>.of(
+                    snapshot.data ?? const <TvMediaItem>[]);
+                if (_sort == 'Top rated') {
+                  items
+                      .sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
+                } else if (_sort == 'Newest') {
+                  items.sort((a, b) =>
+                      (b.releaseDate ?? '').compareTo(a.releaseDate ?? ''));
+                }
                 if (items.isEmpty) {
                   return TvStatePanel(
                     title: 'No $title available',
@@ -130,7 +168,7 @@ class _TvCatalogScreenState extends State<TvCatalogScreen> {
                 }
                 return TvContentGrid<TvMediaItem>(
                   controller: _gridFocusController,
-                  scopeId: 'catalog-${widget.kind.name}',
+                  scopeId: 'catalog-${widget.kind.name}-$_sort',
                   items: items,
                   itemId: (item) => item.stableId,
                   semanticLabel: (item) => item.title,
@@ -166,7 +204,7 @@ class _CatalogHeader extends StatelessWidget {
           style: TextStyle(
             color: colors.onSurface,
             fontFamily: 'FigtreeSB',
-            fontSize: 34,
+            fontSize: 28,
           ),
         ),
       ],

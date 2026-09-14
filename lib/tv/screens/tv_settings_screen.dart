@@ -3,6 +3,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/app_colors.dart';
+import '../../screens/common/update_screen.dart';
 import '../../functions/subtitle_style.dart';
 import '../../provider/settings_provider.dart';
 import '../../provider/app_dependency_provider.dart';
@@ -168,6 +169,17 @@ class TvSettingsScreen extends StatelessWidget {
                       icon: PhosphorIcons.closedCaptioning(),
                       onActivate: () =>
                           _showSubtitleSettings(context, settings),
+                    ),
+                    const SizedBox(height: 14),
+                    _TvSettingTile(
+                      key: const ValueKey<String>('app-updates'),
+                      label: 'App updates',
+                      value: 'Check for updates',
+                      icon: PhosphorIcons.downloadSimple(),
+                      onActivate: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                              builder: (_) => const UpdateScreen(
+                                  isForced: false, television: true))),
                     ),
                   ],
                 ),
@@ -575,7 +587,7 @@ class _TvSubtitleOption extends StatelessWidget {
         semanticLabel: '$label, $value',
         autofocus: autofocus,
         onActivate: onActivate,
-        focusScale: 1.02,
+        focusScale: 1,
         child: Container(
           constraints: const BoxConstraints(minHeight: 64),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),

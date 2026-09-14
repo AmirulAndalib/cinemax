@@ -3,6 +3,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../provider/app_dependency_provider.dart';
+import '../../screens/common/update_screen.dart';
 import '../../provider/recently_watched_provider.dart';
 import '../../provider/settings_provider.dart';
 import '../app/tv_design.dart';
@@ -67,7 +68,12 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => Column(children: [
+        const UpdateBottom(television: true),
+        Expanded(child: _buildFeed(context)),
+      ]);
+
+  Widget _buildFeed(BuildContext context) {
     final recent = context.watch<RecentProvider>();
     final continueWatching = <TvMediaItem>[
       ...recent.movies.map(TvMediaItem.fromRecentMovie),

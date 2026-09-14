@@ -18,8 +18,11 @@ import '../../services/daddylive_service.dart';
 // import '../../services/ethio_sports_service.dart';
 import '../app/tv_design.dart';
 import '../focus/tv_focusable.dart';
+import '../focus/tv_screen_focus_controller.dart';
 import '../player/tv_player_screen.dart';
 import '../widgets/tv_state_panel.dart';
+import '../widgets/tv_content_grid.dart';
+import '../widgets/tv_dialog.dart';
 
 enum _TvLiveScope { all, favorites, recent }
 
@@ -29,9 +32,10 @@ enum _TvLiveMode { channels, schedule }
 // enum _TvLiveSource { daddyLive, ethioSports }
 
 class TvLiveScreen extends StatefulWidget {
-  const TvLiveScreen({required this.metrics, super.key});
+  const TvLiveScreen({required this.metrics, this.focusController, super.key});
 
   final TvShellMetrics metrics;
+  final TvScreenFocusController? focusController;
 
   @override
   State<TvLiveScreen> createState() => _TvLiveScreenState();
@@ -44,7 +48,9 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
   // final _ethioDatabase = LiveTVDatabaseController(namespace: 'ethiosports');
   final _searchController = TextEditingController();
   late final FocusNode _searchFocus;
-  late final FocusNode _firstChannelFocus;
+  final _channelGrid = TvContentGridController();
+  final _browseFocus = FocusNode(debugLabel: 'Live TV browse controls');
+  bool _showSearch = false;
   DaddyLiveService? _service;
   // EthioTV source (commented out - disabled):
   // EthioSportsService? _ethioService;
@@ -68,17 +74,23 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
   @override
   void initState() {
     super.initState();
+    widget.focusController?.attach(this, _requestContentFocus);
     _searchFocus = FocusNode(
       debugLabel: 'Live TV search',
       onKeyEvent: _handleSearchKeyEvent,
-    );
-    _firstChannelFocus = FocusNode(
-      debugLabel: 'Live TV first channel result',
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _analytics.trackLiveTVScreenOpened(surface: _analyticsSurface);
       _load();
     });
+  }
+
+  void _requestContentFocus() {
+    if (_mode == _TvLiveMode.channels && _visible.isNotEmpty) {
+      _channelGrid.requestFocus();
+    } else if (_browseFocus.context != null) {
+      _browseFocus.requestFocus();
+    }
   }
 
   KeyEventResult _handleSearchKeyEvent(FocusNode node, KeyEvent event) {
@@ -99,14 +111,24 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
   }
 
   @override
+  void didUpdateWidget(TvLiveScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.focusController, widget.focusController)) {
+      oldWidget.focusController?.detach(this);
+      widget.focusController?.attach(this, _requestContentFocus);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.focusController?.detach(this);
     _searchAnalyticsDebounce?.cancel();
     _service?.close();
     // EthioTV source (commented out - disabled):
     // _ethioService?.close();
     _searchController.dispose();
     _searchFocus.dispose();
-    _firstChannelFocus.dispose();
+    _browseFocus.dispose();
     super.dispose();
   }
 
@@ -376,16 +398,7 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
 
   void _focusFirstChannelResult() {
     if (_mode != _TvLiveMode.channels || _visible.isEmpty) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted ||
-          _mode != _TvLiveMode.channels ||
-          _visible.isEmpty ||
-          _firstChannelFocus.context == null ||
-          !_firstChannelFocus.canRequestFocus) {
-        return;
-      }
-      _firstChannelFocus.requestFocus();
-    });
+    _channelGrid.requestFocus();
   }
 
   void _selectMode(_TvLiveMode mode) {
@@ -466,19 +479,19 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             _buildTitle(isSchedule),
-            SizedBox(height: widget.metrics.compact ? 12 : 18),
+            const SizedBox(height: 6),
             _buildControls(isSchedule),
             if (!isSchedule && _categories.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 12),
+              const SizedBox(height: 4),
               _buildCategories(),
             ],
             if (isSchedule &&
                 _epg != null &&
                 _epg!.days.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 12),
+              const SizedBox(height: 4),
               _buildDays(),
             ],
-            const SizedBox(height: 16),
+            const SizedBox(height: 4),
             Expanded(
               child: isSchedule ? _buildSchedule() : _buildGrid(),
             ),
@@ -495,7 +508,7 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
       children: <Widget>[
         Container(
           width: 48,
-          height: 48,
+          height: 36,
           decoration: BoxDecoration(
             color: colors.primary.withValues(alpha: 0.14),
             borderRadius: BorderRadius.circular(14),
@@ -518,7 +531,7 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
                 style: TextStyle(
                   color: colors.onSurface,
                   fontFamily: 'FigtreeSB',
-                  fontSize: 34,
+                  fontSize: 28,
                   height: 1,
                 ),
               ),
@@ -526,7 +539,7 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
               Text(
                 isSchedule
                     ? '$_visibleEventCount events • Select a match to watch'
-                    : '${_visible.length} channels • Select a channel to watch',
+                    : '${_visible.length} channels • Hold OK for favorites',
                 style: TextStyle(
                   color: colors.onSurfaceVariant,
                   fontSize: 16,
@@ -535,6 +548,22 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
             ],
           ),
         ),
+        TvFocusable(
+          focusNode: _browseFocus,
+          semanticLabel: 'Search channels',
+          selected: _showSearch,
+          onActivate: () {
+            setState(() => _showSearch = !_showSearch);
+            if (_showSearch) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _searchFocus.requestFocus();
+              });
+            }
+          },
+          child:
+              _TvPill(icon: PhosphorIcons.magnifyingGlass(), label: 'Search'),
+        ),
+        const SizedBox(width: 10),
         TvFocusable(
           semanticLabel: 'Refresh live TV',
           onActivate: () => _load(refresh: true),
@@ -627,61 +656,64 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 56,
-          child: TextField(
-            controller: _searchController,
-            focusNode: _searchFocus,
-            onChanged: _onSearchChanged,
-            onSubmitted: (_) => _focusFirstChannelResult(),
-            textInputAction: TextInputAction.search,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface,
-              fontSize: 20,
-            ),
-            decoration: InputDecoration(
-              hintText: isSchedule
-                  ? 'Search matches, teams & leagues'
-                  : 'Search channels',
-              prefixIcon: Icon(PhosphorIcons.magnifyingGlass()),
-              suffixIcon: _query.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: 'Clear search',
-                      onPressed: () {
-                        _searchController.clear();
-                        _onSearchChanged('');
-                        _searchFocus.requestFocus();
-                      },
-                      icon: Icon(PhosphorIcons.x()),
-                    ),
-              filled: true,
-              fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-              contentPadding: const EdgeInsets.symmetric(vertical: 16),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
+        if (_showSearch) ...<Widget>[
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 48,
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocus,
+              onChanged: _onSearchChanged,
+              onSubmitted: (_) => _focusFirstChannelResult(),
+              textInputAction: TextInputAction.search,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: 20,
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.08),
+              decoration: InputDecoration(
+                hintText: isSchedule
+                    ? 'Search matches, teams & leagues'
+                    : 'Search channels',
+                prefixIcon: Icon(PhosphorIcons.magnifyingGlass()),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          _searchController.clear();
+                          _onSearchChanged('');
+                          _searchFocus.requestFocus();
+                        },
+                        icon: Icon(PhosphorIcons.x()),
+                      ),
+                filled: true,
+                fillColor:
+                    Theme.of(context).colorScheme.surfaceContainerHighest,
+                contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
                 ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: Theme.of(context).colorScheme.primary,
-                  width: 3,
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.08),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 3,
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -690,6 +722,7 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
     return SizedBox(
       height: 48,
       child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         scrollDirection: Axis.horizontal,
         children: <Widget>[
           TvFocusable(
@@ -723,6 +756,7 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
     return SizedBox(
       height: 48,
       child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         scrollDirection: Axis.horizontal,
         children: <Widget>[
           for (var i = 0; i < days.length; i++) ...<Widget>[
@@ -758,26 +792,43 @@ class _TvLiveScreenState extends State<TvLiveScreen> {
         icon: PhosphorIcons.televisionSimple(),
       );
     }
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(3, 3, 12, 30),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisExtent: widget.metrics.compact ? 202 : 216,
-        crossAxisSpacing: widget.metrics.compact ? 14 : 18,
-        mainAxisSpacing: widget.metrics.compact ? 14 : 18,
-      ),
-      itemCount: channels.length,
-      itemBuilder: (_, index) {
-        final channel = channels[index];
-        return _TvChannelCard(
-          channel: channel,
-          playFocusNode: index == 0 ? _firstChannelFocus : null,
-          favorite: _favorites.contains(channel.id),
-          resolving: _resolvingId == channel.id,
-          onPlay: () => _play(channel),
-          onFavorite: () => _toggleFavorite(channel),
-        );
+    return TvContentGrid<Channel>(
+      controller: _channelGrid,
+      scopeId: 'live-${_scope.name}-${_category ?? 'all'}-$_query',
+      items: channels,
+      itemId: (channel) => channel.id,
+      semanticLabel: (channel) =>
+          'Watch ${channel.name}. Hold OK for favorites.',
+      targetItemWidth: widget.metrics.compact ? 210 : 280,
+      itemExtent: 126,
+      horizontalSpacing: 12,
+      verticalSpacing: 12,
+      onItemActivated: (channel) {
+        if (_resolvingId == null) _play(channel);
       },
+      onItemMenu: (channel) => showTvDialog<void>(
+        context: context,
+        title: channel.name,
+        content: const Text('Channel options'),
+        actions: [
+          TvDialogAction(
+            label: _favorites.contains(channel.id)
+                ? 'Remove from favorites'
+                : 'Add to favorites',
+            onPressed: () {
+              Navigator.of(context).pop();
+              _toggleFavorite(channel);
+            },
+          ),
+          TvDialogAction(
+              label: 'Cancel', onPressed: () => Navigator.of(context).pop()),
+        ],
+      ),
+      itemBuilder: (_, channel, width) => _TvChannelCard(
+        channel: channel,
+        favorite: _favorites.contains(channel.id),
+        resolving: _resolvingId == channel.id,
+      ),
     );
   }
 
@@ -938,7 +989,7 @@ class _TvSegmentCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Container(
-      height: 48,
+      height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(
         color: selected
@@ -983,7 +1034,7 @@ class _TvPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Container(
-      height: 48,
+      height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: selected
@@ -1146,157 +1197,52 @@ class _TvScheduleEventTile extends StatelessWidget {
 }
 
 class _TvChannelCard extends StatelessWidget {
-  const _TvChannelCard({
-    required this.channel,
-    required this.playFocusNode,
-    required this.favorite,
-    required this.resolving,
-    required this.onPlay,
-    required this.onFavorite,
-  });
-
+  const _TvChannelCard(
+      {required this.channel, required this.favorite, required this.resolving});
   final Channel channel;
-  final FocusNode? playFocusNode;
   final bool favorite;
   final bool resolving;
-  final VoidCallback onPlay;
-  final VoidCallback onFavorite;
-
-  bool get _isLive => channel.nowPlaying != null;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final subtitle = channel.nowPlaying ??
-        channel.nextUp ??
-        (channel.categories.isEmpty
-            ? 'Channel ${channel.id}'
-            : channel.categories.first);
-    return DecoratedBox(
+    return Container(
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: TvDesign.surfaceFor(context, emphasis: 0.04),
-        borderRadius: BorderRadius.circular(TvDesign.cardRadius),
-        border: Border.all(color: colors.onSurface.withValues(alpha: 0.08)),
+        color: TvDesign.raisedSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white24),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                _TvChannelAvatar(name: channel.name, letter: channel.letter),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    channel.name,
-                    style: const TextStyle(
-                      fontFamily: 'FigtreeSB',
-                      fontSize: 19,
-                      height: 1.15,
-                    ),
-                  ),
-                ),
-                if (_isLive)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colors.error.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: colors.error,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          'LIVE',
-                          style: TextStyle(
-                            color: colors.error,
-                            fontFamily: 'FigtreeSB',
-                            fontSize: 11,
-                            letterSpacing: .6,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            _TvChannelAvatar(name: channel.name, letter: channel.letter),
+            const SizedBox(width: 10),
             Expanded(
-              child: Row(
-                children: <Widget>[
-                  Icon(
-                    _isLive
-                        ? PhosphorIcons.broadcast(PhosphorIconsStyle.fill)
-                        : channel.nextUp != null
-                            ? PhosphorIcons.clockCounterClockwise()
-                            : PhosphorIcons.radio(),
-                    size: 16,
-                    color: _isLive ? colors.primary : colors.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 7),
-                  Expanded(
-                    child: Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color:
-                            _isLive ? colors.primary : colors.onSurfaceVariant,
-                        fontFamily: _isLive ? 'FigtreeSB' : 'Figtree',
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: TvFocusable(
-                    focusNode: playFocusNode,
-                    semanticLabel: 'Play ${channel.name}',
-                    enabled: !resolving,
-                    onActivate: onPlay,
-                    child: _TvPill(
-                      icon: PhosphorIcons.play(),
-                      label: resolving ? 'Loading' : 'Watch',
-                      selected: true,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                TvFocusable(
-                  semanticLabel: favorite
-                      ? 'Remove ${channel.name} from favorites'
-                      : 'Add ${channel.name} to favorites',
-                  onActivate: onFavorite,
-                  child: _TvPill(
-                    icon: favorite
-                        ? PhosphorIcons.heart(PhosphorIconsStyle.fill)
-                        : PhosphorIcons.heart(),
-                    label: '',
-                    selected: favorite,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+                child: Text(channel.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        height: 1.1))),
+            if (favorite)
+              Icon(PhosphorIcons.heart(PhosphorIconsStyle.fill),
+                  size: 18, color: colors.primary),
+          ]),
+          const Spacer(),
+          Text(
+              resolving
+                  ? 'Opening channel…'
+                  : channel.nowPlaying ??
+                      channel.nextUp ??
+                      'Channel ${channel.id} • OK to watch',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: TvDesign.mutedText, fontSize: 14)),
+        ],
       ),
     );
   }

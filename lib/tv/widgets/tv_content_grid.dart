@@ -23,6 +23,8 @@ class TvContentGrid<T> extends StatefulWidget {
     required this.onItemActivated,
     required this.targetItemWidth,
     this.autofocus = false,
+    this.itemExtent,
+    this.onItemMenu,
     this.controller,
     this.padding = const EdgeInsets.all(TvDesign.focusOutset),
     this.horizontalSpacing = 22,
@@ -38,6 +40,8 @@ class TvContentGrid<T> extends StatefulWidget {
   final ValueChanged<T> onItemActivated;
   final double targetItemWidth;
   final bool autofocus;
+  final double? itemExtent;
+  final ValueChanged<T>? onItemMenu;
   final TvContentGridController? controller;
   final EdgeInsets padding;
   final double horizontalSpacing;
@@ -81,6 +85,42 @@ class _TvContentGridState<T> extends State<TvContentGrid<T>> {
   final Map<String, FocusNode> _focusNodes = <String, FocusNode>{};
   final ScrollController _scrollController = ScrollController();
   bool _scheduledInitialFocus = false;
+  int _columnCount = 1;
+  double _itemHeight = 126;
+  Timer? _holdTimer;
+  bool _holdReached = false;
+  String? _heldId;
+
+  KeyEventResult _handleActivation(String id, KeyEvent event) {
+    if (widget.onItemMenu == null) return KeyEventResult.ignored;
+    if (![
+      LogicalKeyboardKey.select,
+      LogicalKeyboardKey.enter,
+      LogicalKeyboardKey.numpadEnter,
+      LogicalKeyboardKey.gameButtonA
+    ].contains(event.logicalKey)) {
+      _heldId = null;
+      _holdTimer?.cancel();
+      return KeyEventResult.ignored;
+    }
+    if (event is KeyDownEvent) {
+      _heldId = id;
+      _holdTimer?.cancel();
+      _holdReached = false;
+      _holdTimer =
+          Timer(const Duration(milliseconds: 500), () => _holdReached = true);
+    } else if (event is KeyUpEvent && _heldId == id) {
+      _holdTimer?.cancel();
+      _heldId = null;
+      final item = widget.items.firstWhere((item) => widget.itemId(item) == id);
+      if (_holdReached) {
+        widget.onItemMenu!(item);
+      } else {
+        widget.onItemActivated(item);
+      }
+    }
+    return KeyEventResult.handled;
+  }
 
   @override
   void initState() {
@@ -122,7 +162,9 @@ class _TvContentGridState<T> extends State<TvContentGrid<T>> {
     for (final id in ids) {
       _focusNodes.putIfAbsent(
         id,
-        () => FocusNode(debugLabel: '${widget.scopeId}:$id'),
+        () => FocusNode(
+            debugLabel: '${widget.scopeId}:$id',
+            onKeyEvent: (_, event) => _handleActivation(id, event)),
       );
     }
     final activeIds = ids.toSet();
@@ -148,14 +190,20 @@ class _TvContentGridState<T> extends State<TvContentGrid<T>> {
     final rememberedId = memory?.recall(widget.scopeId);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final firstId = widget.itemId(widget.items.first);
-      (_focusNodes[rememberedId] ?? _focusNodes[firstId])?.requestFocus();
+      if (widget.items.isEmpty) return;
+      final index = widget.items
+          .indexWhere((item) => widget.itemId(item) == rememberedId);
+      unawaited(_revealAndFocus(
+          targetIndex: index < 0 ? 0 : index,
+          columnCount: _columnCount,
+          itemHeight: _itemHeight));
     });
   }
 
   @override
   void dispose() {
     widget.controller?._detach(this);
+    _holdTimer?.cancel();
     for (final node in _focusNodes.values) {
       node.dispose();
     }
@@ -247,7 +295,11 @@ class _TvContentGridState<T> extends State<TvContentGrid<T>> {
             (usableWidth / columnCount) - widget.horizontalSpacing;
         const focusPadding = 6.0;
         final contentWidth = itemWidth - (focusPadding * 2);
-        final itemHeight = (contentWidth / (16 / 9)) + 60 + (focusPadding * 2);
+        final itemHeight = widget.itemExtent ??
+            (contentWidth / (16 / 9)) + 60 + (focusPadding * 2);
+
+        _columnCount = columnCount;
+        _itemHeight = itemHeight;
 
         return FocusTraversalGroup(
           policy: ReadingOrderTraversalPolicy(),
@@ -270,17 +322,31 @@ class _TvContentGridState<T> extends State<TvContentGrid<T>> {
                 focusNode: _focusNodes[id],
                 semanticLabel: widget.semanticLabel(item),
                 onFocusChanged: (hasFocus) {
+                  if (!hasFocus && _heldId == id) {
+                    _heldId = null;
+                    _holdTimer?.cancel();
+                  }
                   if (hasFocus) {
                     memory?.remember(scopeId: widget.scopeId, itemId: id);
                   }
                 },
                 onActivate: () => widget.onItemActivated(item),
-                onKeyEvent: (_, event) => _handleGridKey(
-                  event: event,
-                  index: index,
-                  columnCount: columnCount,
-                  itemHeight: itemHeight,
-                ),
+                onLongPress: widget.onItemMenu == null
+                    ? null
+                    : () => widget.onItemMenu!(item),
+                onKeyEvent: (_, event) {
+                  if (event.logicalKey == LogicalKeyboardKey.contextMenu &&
+                      widget.onItemMenu != null) {
+                    if (event is KeyDownEvent) widget.onItemMenu!(item);
+                    return KeyEventResult.handled;
+                  }
+                  return _handleGridKey(
+                    event: event,
+                    index: index,
+                    columnCount: columnCount,
+                    itemHeight: itemHeight,
+                  );
+                },
                 padding: const EdgeInsets.all(focusPadding),
                 child: widget.itemBuilder(context, item, contentWidth),
               );

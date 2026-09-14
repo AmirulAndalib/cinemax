@@ -33,6 +33,7 @@ import 'services/app_session_state_store.dart';
 import 'services/app_remote_config.dart';
 import 'screens/common/downloads_screen.dart';
 import 'tv/platform/device_presentation.dart';
+import 'tv/widgets/tv_update_gate.dart';
 
 class FlixQuest extends StatefulWidget {
   const FlixQuest(
@@ -229,15 +230,21 @@ class _FlixQuestState extends State<FlixQuest>
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      child ?? const SizedBox.shrink(),
-                      OccasionalEffectOverlay(
-                        theme: appDependencyProvider.activeOccasionalTheme,
-                        enabled:
-                            appDependencyProvider.shouldShowOccasionalEffects,
-                        visibilityListenable: appDependencyProvider,
-                        visibilityResolver: () =>
-                            appDependencyProvider.shouldShowOccasionalEffects,
-                      ),
+                      if (widget.devicePresentation ==
+                          DevicePresentation.television)
+                        TvUpdateGate(child: child ?? const SizedBox.shrink())
+                      else
+                        child ?? const SizedBox.shrink(),
+                      if (widget.devicePresentation !=
+                          DevicePresentation.television)
+                        OccasionalEffectOverlay(
+                          theme: appDependencyProvider.activeOccasionalTheme,
+                          enabled:
+                              appDependencyProvider.shouldShowOccasionalEffects,
+                          visibilityListenable: appDependencyProvider,
+                          visibilityResolver: () =>
+                              appDependencyProvider.shouldShowOccasionalEffects,
+                        ),
                     ],
                   ),
                 ),

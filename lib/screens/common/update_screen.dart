@@ -11,6 +11,9 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/app_constants.dart';
+import '../../tv/focus/tv_keymap.dart';
+import '../../tv/widgets/tv_dialog.dart';
+import '../../tv/widgets/tv_update_widgets.dart';
 import '../../provider/app_dependency_provider.dart';
 import '../../provider/settings_provider.dart';
 import '../../services/globle_method.dart';
@@ -18,9 +21,11 @@ import '../../services/app_update_service.dart';
 import '../../ui_components/app_ui_components.dart';
 
 class UpdateScreen extends StatefulWidget {
-  const UpdateScreen({super.key, required this.isForced});
+  const UpdateScreen(
+      {super.key, required this.isForced, this.television = false});
 
   final bool isForced;
+  final bool television;
 
   @override
   State<UpdateScreen> createState() => _UpdateScreenState();
@@ -31,6 +36,19 @@ class _UpdateScreenState extends State<UpdateScreen> {
   PackageInfo? _packageInfo;
   String _savedDir = '';
   Object? _error;
+  bool _showingMandatoryDialog = false;
+
+  bool get _forced {
+    final config = context.read<AppDependencyProvider>();
+    return widget.isForced ||
+        (config.isForcedUpdate &&
+            _packageInfo != null &&
+            AppUpdateService.isAvailable(
+                packageInfo: _packageInfo!,
+                remoteVersion: config.latestAppVersion,
+                latestBuildNumber: config.latestBuildNumber,
+                minimumBuildNumber: config.minimumBuildNumber));
+  }
 
   @override
   void initState() {
@@ -60,7 +78,28 @@ class _UpdateScreenState extends State<UpdateScreen> {
     }
   }
 
-  Future<void> _showMustUpdateDialog() {
+  Future<void> _showMustUpdateDialog() async {
+    if (_showingMandatoryDialog) return;
+    if (widget.television) {
+      _showingMandatoryDialog = true;
+      try {
+        await showTvDialog<void>(
+            context: context,
+            title: 'Update required',
+            content: const Text(
+                'Update FlixQuest to continue watching. You can also exit the app.'),
+            actions: [
+              TvDialogAction(
+                  label: 'Return to update',
+                  autofocus: true,
+                  onPressed: () => Navigator.pop(context)),
+              TvDialogAction(label: 'Exit app', onPressed: SystemNavigator.pop),
+            ]);
+      } finally {
+        _showingMandatoryDialog = false;
+      }
+      return;
+    }
     return showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -86,17 +125,99 @@ class _UpdateScreenState extends State<UpdateScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !widget.isForced,
+      canPop: !_forced,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && widget.isForced) _showMustUpdateDialog();
+        if (!didPop && _forced) _showMustUpdateDialog();
       },
-      child: Scaffold(
-        appBar: AppBar(title: Text(tr('check_for_update'))),
-        body: AppResponsiveContent(
-          maxWidth: 680,
-          child: _buildBody(),
-        ),
-      ),
+      child: widget.television
+          ? TvKeymap(
+              onBack: () async {
+                if (_forced) {
+                  await _showMustUpdateDialog();
+                } else {
+                  await Navigator.of(context).maybePop();
+                }
+              },
+              child: _buildTvBody())
+          : Scaffold(
+              appBar: AppBar(title: Text(tr('check_for_update'))),
+              body: AppResponsiveContent(
+                maxWidth: 680,
+                child: _buildBody(),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildTvBody() {
+    final config = context.watch<AppDependencyProvider>();
+    final available = _packageInfo != null &&
+        AppUpdateService.isAvailable(
+            packageInfo: _packageInfo!,
+            remoteVersion: config.latestAppVersion,
+            latestBuildNumber: config.latestBuildNumber,
+            minimumBuildNumber: config.minimumBuildNumber);
+    final version = AppUpdateService.displayVersion(
+        config.latestAppVersion,
+        AppUpdateService.effectiveBuildNumber(
+            latestBuildNumber: config.latestBuildNumber,
+            minimumBuildNumber: config.minimumBuildNumber));
+    return TvUpdateLayout(
+      title: _forced ? 'Update required' : 'App updates',
+      message: _error != null
+          ? 'Unable to prepare the update. Please try again.'
+          : _packageInfo == null
+              ? 'Checking your installed version…'
+              : available
+                  ? 'FlixQuest $version is available. Installed: ${_packageInfo!.version}. '
+                      '${_forced ? 'Update to continue watching.' : 'Get the latest improvements for your TV.'}'
+                  : 'You’re up to date. FlixQuest ${_packageInfo!.version}',
+      children: [
+        if (_error != null)
+          TvUpdateAction(
+              label: 'Retry',
+              autofocus: true,
+              primary: true,
+              onPressed: _prepare)
+        else if (_packageInfo == null)
+          const Center(child: CircularProgressIndicator())
+        else if (available) ...[
+          if (config.appDownloadUrl.isNotEmpty)
+            _DownloadCard(
+                appVersion: version,
+                url: config.appDownloadUrl,
+                television: true,
+                task: _downloadManager.getDownload(config.appDownloadUrl),
+                onToggle: _toggleDownload,
+                onOpen: _openDownload,
+                onDelete: _deleteDownload)
+          else ...[
+            const Text(
+                'The download link is not available yet. Please try again later.',
+                style: TextStyle(color: Colors.white70, fontSize: 20)),
+            const SizedBox(height: 16),
+          ],
+          if (config.changeLog.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            TvUpdateChangelog(
+                changeLog: config.changeLog,
+                onPressed: () => _showChangelog(config.changeLog)),
+          ],
+        ],
+        const SizedBox(height: 16),
+        TvUpdateAction(
+            label: _forced ? 'Exit app' : 'Back',
+            autofocus: _error == null &&
+                (_packageInfo != null &&
+                    (!available || config.appDownloadUrl.isEmpty)),
+            onPressed: () {
+              if (_forced) {
+                _showMustUpdateDialog();
+              } else {
+                Navigator.of(context).maybePop();
+              }
+            }),
+      ],
     );
   }
 
@@ -193,6 +314,12 @@ class _UpdateScreenState extends State<UpdateScreen> {
   }
 
   void _showChangelog(String changeLog) {
+    if (widget.television) {
+      Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => TvChangelogView(changeLog: changeLog),
+      ));
+      return;
+    }
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -208,34 +335,69 @@ class _UpdateScreenState extends State<UpdateScreen> {
     );
   }
 
-  void _toggleDownload(String url) {
-    final task = _downloadManager.getDownload(url);
-    if (task == null || task.status.value.isCompleted) {
-      _downloadManager.addDownload(
-        url,
-        '$_savedDir/${_downloadManager.getFileNameFromUrl(url)}',
-      );
-    } else if (task.status.value == DownloadStatus.downloading) {
-      _downloadManager.pauseDownload(url);
-    } else if (task.status.value == DownloadStatus.paused) {
-      _downloadManager.resumeDownload(url);
+  Future<void> _toggleDownload(String url) async {
+    try {
+      final task = _downloadManager.getDownload(url);
+      if (task == null || task.status.value.isCompleted) {
+        await _downloadManager.addDownload(
+          url,
+          '$_savedDir/${_downloadManager.getFileNameFromUrl(url)}',
+        );
+      } else if (task.status.value == DownloadStatus.downloading ||
+          task.status.value == DownloadStatus.queued) {
+        await _downloadManager.pauseDownload(url);
+      } else if (task.status.value == DownloadStatus.paused) {
+        await _downloadManager.resumeDownload(url);
+      }
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) _showDownloadError(error.toString());
     }
-    setState(() {});
   }
 
-  void _openDownload(String url) {
-    final file = File(
-      '$_savedDir/${_downloadManager.getFileNameFromUrl(url)}',
-    );
-    if (file.existsSync()) OpenFilex.open(file.path);
+  void _showDownloadError(String message) {
+    if (widget.television) {
+      showTvDialog<void>(
+          context: context,
+          title: 'Update could not complete',
+          content: Text(message),
+          actions: [
+            TvDialogAction(label: 'OK', onPressed: () => Navigator.pop(context))
+          ]);
+    } else {
+      GlobalMethods.showErrorScaffoldMessengerGeneral(
+          Exception(message), context);
+    }
   }
 
-  void _deleteDownload(String url) {
-    final file = File(
-      '$_savedDir/${_downloadManager.getFileNameFromUrl(url)}',
-    );
-    if (file.existsSync()) file.deleteSync();
-    setState(() {});
+  Future<void> _openDownload(String url) async {
+    final file = File('$_savedDir/${_downloadManager.getFileNameFromUrl(url)}');
+    try {
+      if (!await file.exists()) {
+        throw const FileSystemException(
+            'The downloaded file is missing. Delete it and download again.');
+      }
+      final result = await OpenFilex.open(file.path,
+          type: 'application/vnd.android.package-archive');
+      if (result.type != ResultType.done && mounted) {
+        _showDownloadError(
+            '${result.message}\nIf Android asks, allow FlixQuest to install apps, then select Install again.');
+      }
+    } catch (error) {
+      if (mounted) _showDownloadError(error.toString());
+    }
+  }
+
+  Future<void> _deleteDownload(String url) async {
+    try {
+      final file =
+          File('$_savedDir/${_downloadManager.getFileNameFromUrl(url)}');
+      if (await file.exists()) await file.delete();
+      await _downloadManager.removeDownload(url);
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) _showDownloadError(error.toString());
+    }
   }
 }
 
@@ -247,8 +409,10 @@ class _DownloadCard extends StatelessWidget {
     required this.onToggle,
     required this.onOpen,
     required this.onDelete,
+    this.television = false,
   });
 
+  final bool television;
   final String appVersion;
   final String url;
   final DownloadTask? task;
@@ -256,8 +420,69 @@ class _DownloadCard extends StatelessWidget {
   final ValueChanged<String> onOpen;
   final ValueChanged<String> onDelete;
 
+  Widget _tvActions(BuildContext context, DownloadStatus? status) {
+    final label = switch (status) {
+      null => 'Download update',
+      DownloadStatus.completed => 'Install',
+      DownloadStatus.downloading || DownloadStatus.queued => 'Pause',
+      DownloadStatus.paused => 'Resume',
+      _ => 'Retry download',
+    };
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (status == DownloadStatus.failed)
+        const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text('Download failed. Check your connection and retry.',
+                style: TextStyle(fontSize: 20, color: Colors.white70))),
+      TvUpdateAction(
+          label: label,
+          autofocus: true,
+          primary: true,
+          onPressed: () {
+            if (status == DownloadStatus.completed) {
+              onOpen(url);
+            } else {
+              if (status == null) {
+                context
+                    .read<SettingsProvider>()
+                    .analytics
+                    .trackAppUpdateDownload(appVersion);
+              }
+              onToggle(url);
+            }
+          }),
+      if (status == DownloadStatus.completed) ...[
+        const SizedBox(height: 12),
+        TvUpdateAction(
+            label: 'Delete download', onPressed: () => onDelete(url)),
+      ],
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (television) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (task != null) ...[
+          ValueListenableBuilder<double>(
+              valueListenable: task!.progress,
+              builder: (_, progress, __) => Column(children: [
+                    LinearProgressIndicator(
+                        value: progress.isFinite ? progress.clamp(0, 1) : null),
+                    const SizedBox(height: 8),
+                    Text(
+                        '${progress.isFinite ? (progress.clamp(0, 1) * 100).round() : 0}%',
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 18)),
+                  ])),
+          const SizedBox(height: 12),
+          ValueListenableBuilder<DownloadStatus>(
+              valueListenable: task!.status,
+              builder: (_, status, __) => _tvActions(context, status)),
+        ] else
+          _tvActions(context, null),
+      ]);
+    }
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Padding(
@@ -342,7 +567,9 @@ class _DownloadCard extends StatelessWidget {
 }
 
 class UpdateBottom extends StatefulWidget {
-  const UpdateBottom({super.key});
+  const UpdateBottom({this.television = false, super.key});
+
+  final bool television;
 
   @override
   State<UpdateBottom> createState() => _UpdateBottomState();
@@ -360,7 +587,12 @@ class _UpdateBottomState extends State<UpdateBottom> {
   }
 
   Future<void> _checkVisibility() async {
-    final packageInfo = await _packageInfo;
+    PackageInfo packageInfo;
+    try {
+      packageInfo = await _packageInfo;
+    } catch (_) {
+      return;
+    }
     if (!mounted) return;
     final config = context.read<AppDependencyProvider>();
     final notificationId = AppUpdateService.notificationId(
@@ -394,7 +626,10 @@ class _UpdateBottomState extends State<UpdateBottom> {
     if (_notificationId.isNotEmpty) {
       await sharedPrefsSingleton.setString('ignore_version', _notificationId);
     }
-    if (mounted) setState(() => _visible = false);
+    if (mounted) {
+      if (widget.television) FocusScope.of(context).nextFocus();
+      setState(() => _visible = false);
+    }
   }
 
   @override
@@ -410,6 +645,38 @@ class _UpdateBottomState extends State<UpdateBottom> {
       remoteBuild,
     );
     final colors = Theme.of(context).colorScheme;
+    if (widget.television) {
+      return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+                color: colors.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+                border:
+                    Border.all(color: colors.primary.withValues(alpha: 0.5))),
+            child: Row(children: [
+              Expanded(
+                  child: Text('Update available • FlixQuest $version',
+                      style: TextStyle(
+                          color: colors.onSurface,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700))),
+              const SizedBox(width: 16),
+              TvUpdateAction(
+                  label: 'Update',
+                  primary: true,
+                  onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                          builder: (_) => const UpdateScreen(
+                              isForced: false, television: true)))),
+              const SizedBox(width: 12),
+              TvUpdateAction(label: 'Not now', onPressed: _dismiss),
+            ]),
+          ));
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: DecoratedBox(

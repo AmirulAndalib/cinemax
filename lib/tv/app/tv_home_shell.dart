@@ -51,6 +51,8 @@ class _TvHomeShellState extends State<TvHomeShell> with RestorationMixin {
       TvScreenFocusController();
   final TvScreenFocusController _seriesFocusController =
       TvScreenFocusController();
+  final TvScreenFocusController _liveFocusController =
+      TvScreenFocusController();
   final TvScreenFocusController _settingsFocusController =
       TvScreenFocusController();
   late final FocusScopeNode _shellFocusScope;
@@ -190,6 +192,7 @@ class _TvHomeShellState extends State<TvHomeShell> with RestorationMixin {
       'movies' => _moviesFocusController,
       'series' => _seriesFocusController,
       'settings' => _settingsFocusController,
+      'live' => _liveFocusController,
       _ => null,
     };
     if (controller == null) return false;
@@ -329,7 +332,7 @@ class _TvHomeShellState extends State<TvHomeShell> with RestorationMixin {
           node: _shellFocusScope,
           child: Scaffold(
             key: TvHomeShell.shellKey,
-            backgroundColor: TvDesign.surfaceFor(context),
+            backgroundColor: TvDesign.pageBackground,
             body: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
@@ -340,7 +343,7 @@ class _TvHomeShellState extends State<TvHomeShell> with RestorationMixin {
                         .colorScheme
                         .primary
                         .withValues(alpha: 0.1),
-                    TvDesign.surfaceFor(context),
+                    TvDesign.pageBackground,
                   ],
                 ),
               ),
@@ -395,6 +398,7 @@ class _TvHomeShellState extends State<TvHomeShell> with RestorationMixin {
                                   if (showLiveTv)
                                     _liveDestinationId: TvLiveScreen(
                                       metrics: metrics,
+                                      focusController: _liveFocusController,
                                     ),
                                   'library': TvLibraryScreen(
                                     key: ValueKey<int>(_libraryRevision),

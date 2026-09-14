@@ -15,12 +15,12 @@ class TvShellMetrics {
   factory TvShellMetrics.fromConstraints(BoxConstraints constraints) {
     final compact = constraints.maxHeight < 700 || constraints.maxWidth < 1200;
     final safeInset = compact ? 22.0 : 42.0;
-    final railWidth = compact ? 88.0 : 210.0;
-    final railGap = compact ? 22.0 : 38.0;
+    final railWidth = compact ? 72.0 : 96.0;
+    final railGap = compact ? 12.0 : 24.0;
     final contentWidth =
         constraints.maxWidth - (safeInset * 2) - railWidth - railGap;
     final mediaCardWidth =
-        (contentWidth / (compact ? 3.25 : 4.15)).clamp(190.0, 286.0);
+        (contentWidth / (compact ? 3.5 : 4.5)).clamp(170.0, 286.0);
 
     return TvShellMetrics(
       compact: compact,
