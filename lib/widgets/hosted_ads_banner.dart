@@ -89,6 +89,69 @@ class HostedAdsBanner extends StatelessWidget {
   }
 }
 
+/// Presents one hosted ad as a dismissible interstitial before playback.
+/// Loading and rendering failures are intentionally silent so playback is
+/// never blocked by an unavailable ad.
+Future<void> showHostedInterstitialAd(
+  BuildContext context, {
+  required Future<List<BannerAd>> Function() loadAds,
+}) async {
+  try {
+    final ads = (await loadAds())
+        .where((ad) =>
+            ad.imageUrl.isNotEmpty &&
+            ad.targetUrl.isNotEmpty &&
+            (ad.placements.isEmpty || ad.placements.contains('interstitial')))
+        .toList(growable: false);
+    if (ads.isEmpty || !context.mounted) return;
+    final ad = ads.first;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: .82),
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+        child: Stack(
+          children: [
+            GestureDetector(
+              onTap: () => unawaited(launchUrlString(ad.targetUrl)),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: CachedNetworkImage(
+                  imageUrl: ad.imageUrl,
+                  cacheManager: _adImageCache,
+                  fit: BoxFit.contain,
+                  placeholder: (_, __) => const SizedBox(
+                    height: 240,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                  errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                tooltip: 'Close',
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.black.withValues(alpha: .65),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                icon: const Icon(Icons.close),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  } catch (_) {
+    // Ads are optional and must never interrupt playback.
+  }
+}
+
 class _CachedAdCarousel extends StatefulWidget {
   const _CachedAdCarousel({
     required this.ads,

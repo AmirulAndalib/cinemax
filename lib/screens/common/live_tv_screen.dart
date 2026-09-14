@@ -276,6 +276,11 @@ class _ChannelListState extends State<ChannelList> {
         durationMs: stopwatch.elapsedMilliseconds,
         source: _mode.name,
       );
+      final dependencies = context.read<AppDependencyProvider>();
+      await showHostedInterstitialAd(
+        context,
+        loadAds: () => ScraperApi(dependencies.flixquestAPIURL).getAds(),
+      );
       final autoFullScreen = context.read<SettingsProvider>().defaultViewMode;
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(

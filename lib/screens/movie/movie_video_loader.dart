@@ -32,6 +32,7 @@ import '../../screens/common/player.dart';
 import '../../screens/common/download_selection_sheets.dart';
 import '../../screens/common/manual_source_picker.dart';
 import '../../tv/player/tv_player_screen.dart';
+import '../../widgets/hosted_ads_banner.dart';
 
 class MovieVideoLoader extends StatefulWidget {
   const MovieVideoLoader(
@@ -264,6 +265,13 @@ class _MovieVideoLoaderState extends State<MovieVideoLoader> {
               movieId: widget.metadata.movieId,
               isAdult: widget.metadata.isAdult ?? 'unknown',
             );
+
+        final dependencies =
+            Provider.of<AppDependencyProvider>(context, listen: false);
+        await showHostedInterstitialAd(
+          context,
+          loadAds: () => ScraperApi(dependencies.flixquestAPIURL).getAds(),
+        );
 
         // Navigate to player with provider list for lazy loading
         debugPrint(
