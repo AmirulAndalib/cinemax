@@ -306,6 +306,7 @@ class _ChannelListState extends State<ChannelList> {
                 context.read<AppDependencyProvider>().flixquestAPIURL,
             onChannelSwitch: (switched) =>
                 _daddyDatabase.addRecent(switched.id),
+            enableCast: false,
           ),
         ),
       );

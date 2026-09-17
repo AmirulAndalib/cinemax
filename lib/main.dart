@@ -44,6 +44,18 @@ AppDependencyProvider appDependencyProvider = AppDependencyProvider();
 WellnessProvider wellnessProvider = WellnessProvider.instance;
 final Future<FirebaseApp> _initialization = Firebase.initializeApp();
 
+bool _isRecoverableImageError(FlutterErrorDetails details) {
+  final context = details.context?.toString() ?? '';
+  final stack = details.stack?.toString() ?? '';
+
+  // cached_network_image reports failed downloads and evicted cache files
+  // through Flutter's image error channel. These are expected per-image
+  // failures and widgets already provide their own fallback content.
+  return context.contains('resolving an image codec') ||
+      context.contains('loading an image') ||
+      stack.contains('MultiImageStreamCompleter');
+}
+
 Future<DevicePresentation> appInitialize({
   DevicePresentationDetector? devicePresentationDetector,
 }) async {
@@ -60,7 +72,10 @@ Future<DevicePresentation> appInitialize({
 
   // Surface uncaught Dart and platform errors to Crashlytics. Installed only
   // after Firebase initialization so the recorder is always ready.
-  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+  FlutterError.onError = (details) {
+    if (_isRecoverableImageError(details)) return;
+    FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+  };
   PlatformDispatcher.instance.onError = (error, stackTrace) {
     FirebaseCrashlytics.instance.recordError(error, stackTrace, fatal: true);
     return true;

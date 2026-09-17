@@ -36,7 +36,10 @@ class LivePlayer extends StatefulWidget {
     this.initialChannelId,
     this.service,
     this.onChannelSwitch,
-    this.enableCast = true,
+    // MediaRouteButton is a native platform view and can crash on Android
+    // devices whose Flutter window resolves its background as transparent.
+    // Keep this opt-in until the native button is made safe for that context.
+    this.enableCast = false,
     this.useTvControls = false,
     super.key,
   });
