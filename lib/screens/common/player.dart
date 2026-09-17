@@ -526,12 +526,13 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
 
   Future<void> _setupInitialDataSource(
       BetterPlayerDataSource dataSource) async {
-    final initialPosition = widget.initialPlaybackPosition ??
-        Duration(
-          seconds: widget.mediaType == MediaType.movie
-              ? widget.movieMetadata!.elapsed!
-              : widget.tvMetadata!.elapsed!,
-        );
+    final metadataElapsed = widget.mediaType == MediaType.movie
+        ? widget.movieMetadata?.elapsed
+        : widget.tvMetadata?.elapsed;
+    final requestedPosition = widget.initialPlaybackPosition ??
+        Duration(seconds: metadataElapsed ?? 0);
+    final initialPosition =
+        requestedPosition < Duration.zero ? Duration.zero : requestedPosition;
     try {
       StreamIntroConfig intro = const StreamIntroConfig.disabled();
       try {
@@ -753,6 +754,12 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     if (startedAt == null) return;
     _analyticsWatchedMs += DateTime.now().difference(startedAt).inMilliseconds;
     _analyticsPlayingStartedAt = null;
+  }
+
+  bool _isVideoInitializedSafely() {
+    if (!_betterPlayerControllerInitialized) return false;
+    return _betterPlayerController.videoPlayerController?.value.initialized ==
+        true;
   }
 
   void _trackPlaybackEvent(
@@ -1886,7 +1893,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
         completed: _playbackCompletionHandled,
         syncImmediately: true,
       ));
-      if (_betterPlayerController.isVideoInitialized()!) {
+      if (_isVideoInitializedSafely()) {
         widget.mediaType == MediaType.movie
             ? insertRecentMovieData()
             : insertRecentEpisodeData();
@@ -1896,6 +1903,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _betterPlayerControllerInitialized = false;
     settings.removeListener(_syncAmbientGlowSetting);
     final suppressionId = _occasionalEffectsSuppressionId;
     if (suppressionId != null) {
@@ -3217,7 +3225,7 @@ class _PlayerOneState extends State<PlayerOne> with WidgetsBindingObserver {
     final onTvPlayerExit = widget.onTvPlayerExit;
     Navigator.pop(
       context,
-      _betterPlayerController.isVideoInitialized() == true
+      _isVideoInitializedSafely()
           ? widget.mediaType == MediaType.movie
               ? insertRecentMovieData
               : insertRecentEpisodeData
